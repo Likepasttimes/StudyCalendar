@@ -441,5 +441,6 @@ private fun LearningSnapshotEntity.toDomain(localPath: String) = LearningSnapsho
     kind = SnapshotKind.valueOf(kind),
     displayName = displayName,
     localPath = localPath,
+    mimeType = mimeType,
     createdAtEpochMillis = createdAtEpochMillis,
 )

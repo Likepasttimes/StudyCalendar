@@ -103,10 +103,10 @@ class AcceptanceViewModel(
                 )
                 _feedback.emit(
                     UiFeedback(
-                        if (kind == SnapshotKind.PHOTO) {
-                            "照片已保存到本地"
-                        } else {
-                            "录音已保存到本地"
+                        when (kind) {
+                            SnapshotKind.PHOTO -> "照片已保存到本地"
+                            SnapshotKind.AUDIO -> "录音已保存到本地"
+                            SnapshotKind.FILE -> "文件已保存到本地"
                         },
                     ),
                 )

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path
+        name="external_learning_snapshots"
+        path="学习快照/" />
+    <files-path
+        name="internal_learning_snapshots"
+        path="学习快照/" />
+</paths>

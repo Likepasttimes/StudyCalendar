@@ -38,7 +38,11 @@ class LocalSnapshotStorage(
 
         val sourceName = queryDisplayName(sourceUri)
         val mimeType = resolver.getType(sourceUri)
-        val fallbackName = if (kind == SnapshotKind.PHOTO) "学习照片" else "学习录音"
+        val fallbackName = when (kind) {
+            SnapshotKind.PHOTO -> "学习照片"
+            SnapshotKind.AUDIO -> "学习录音"
+            SnapshotKind.FILE -> "学习文件"
+        }
         val extension = resolveExtension(sourceName, mimeType, kind)
         val targetFile = File(
             cardDirectory,
@@ -109,7 +113,11 @@ class LocalSnapshotStorage(
             "audio/mpeg" -> "mp3"
             "audio/mp4", "audio/x-m4a" -> "m4a"
             "audio/wav", "audio/x-wav" -> "wav"
-            else -> if (kind == SnapshotKind.PHOTO) "jpg" else "audio"
+            else -> when (kind) {
+                SnapshotKind.PHOTO -> "jpg"
+                SnapshotKind.AUDIO -> "audio"
+                SnapshotKind.FILE -> "bin"
+            }
         }
     }
 

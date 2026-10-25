@@ -3,6 +3,7 @@ package com.learningcalendar.app.domain
 enum class SnapshotKind {
     PHOTO,
     AUDIO,
+    FILE,
 }
 
 data class LearningSnapshot(
@@ -11,6 +12,7 @@ data class LearningSnapshot(
     val kind: SnapshotKind,
     val displayName: String,
     val localPath: String,
+    val mimeType: String?,
     val createdAtEpochMillis: Long,
 )
 
