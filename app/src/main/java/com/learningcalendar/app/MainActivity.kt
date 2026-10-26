@@ -20,7 +20,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             LearningCalendarTheme {
                 val application = application as LearningCalendarApplication
-                LearningCalendarApp(repository = application.appContainer.taskRepository)
+                LearningCalendarApp(
+                    repository = application.appContainer.taskRepository,
+                    computerSyncRepository = application.appContainer.computerSyncRepository,
+                )
             }
         }
     }

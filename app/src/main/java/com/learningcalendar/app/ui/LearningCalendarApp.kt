@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.learningcalendar.app.data.StudyTaskRepository
+import com.learningcalendar.app.data.sync.ComputerSyncRepository
 import com.learningcalendar.app.ui.acceptance.AcceptanceScreen
 import com.learningcalendar.app.ui.acceptance.AcceptanceViewModel
 import com.learningcalendar.app.ui.acceptance.AcceptanceViewModelFactory
@@ -22,6 +23,9 @@ import com.learningcalendar.app.ui.detail.TaskDetailViewModelFactory
 import com.learningcalendar.app.ui.errors.ErrorRecordsScreen
 import com.learningcalendar.app.ui.errors.ErrorRecordsViewModel
 import com.learningcalendar.app.ui.errors.ErrorRecordsViewModelFactory
+import com.learningcalendar.app.ui.sync.ComputerSyncScreen
+import com.learningcalendar.app.ui.sync.ComputerSyncViewModel
+import com.learningcalendar.app.ui.sync.ComputerSyncViewModelFactory
 import com.learningcalendar.app.ui.weekly.WeekSummaryDetailScreen
 import com.learningcalendar.app.ui.weekly.WeekSummaryViewModel
 import com.learningcalendar.app.ui.weekly.WeekSummaryViewModelFactory
@@ -37,9 +41,13 @@ private const val ACCEPTANCE_ROUTE = "acceptance/{cardId}"
 private const val WEEKLY_ROUTE = "weekly-summary"
 private const val WEEK_DETAIL_ROUTE = "week-detail/{weekStart}"
 private const val ERROR_RECORDS_ROUTE = "errors/{cardId}"
+private const val COMPUTER_SYNC_ROUTE = "computer-sync"
 
 @Composable
-fun LearningCalendarApp(repository: StudyTaskRepository) {
+fun LearningCalendarApp(
+    repository: StudyTaskRepository,
+    computerSyncRepository: ComputerSyncRepository,
+) {
     val navController = rememberNavController()
     val calendarFactory = CalendarViewModelFactory(repository)
 
@@ -87,6 +95,11 @@ fun LearningCalendarApp(repository: StudyTaskRepository) {
                                 launchSingleTop = true
                             }
                         },
+                        onComputerSyncClick = {
+                            navController.navigate(COMPUTER_SYNC_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
                     )
                 },
             )
@@ -106,6 +119,11 @@ fun LearningCalendarApp(repository: StudyTaskRepository) {
                             navController.popBackStack(CALENDAR_ROUTE, inclusive = false)
                         },
                         onWeeklySummaryClick = {},
+                        onComputerSyncClick = {
+                            navController.navigate(COMPUTER_SYNC_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
                     )
                 },
                 onPreviousWeek = overviewViewModel::previousWeek,
@@ -113,6 +131,34 @@ fun LearningCalendarApp(repository: StudyTaskRepository) {
                 onOpenDetail = { weekStart ->
                     navController.navigate("week-detail/$weekStart")
                 },
+            )
+        }
+
+        composable(COMPUTER_SYNC_ROUTE) {
+            val syncViewModel: ComputerSyncViewModel = viewModel(
+                factory = ComputerSyncViewModelFactory(computerSyncRepository),
+            )
+            val state by syncViewModel.uiState.collectAsStateWithLifecycle()
+            ComputerSyncScreen(
+                state = state,
+                bottomBar = {
+                    MainSectionBar(
+                        selected = MainSection.COMPUTER_SYNC,
+                        onCalendarClick = {
+                            navController.popBackStack(CALENDAR_ROUTE, inclusive = false)
+                        },
+                        onWeeklySummaryClick = {
+                            navController.navigate(WEEKLY_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onComputerSyncClick = {},
+                    )
+                },
+                onHostChange = syncViewModel::setHost,
+                onPortChange = syncViewModel::setPort,
+                onPairingCodeChange = syncViewModel::setPairingCode,
+                onSync = syncViewModel::sync,
             )
         }
 

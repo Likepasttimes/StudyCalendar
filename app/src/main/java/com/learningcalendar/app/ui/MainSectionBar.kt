@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 enum class MainSection {
     CALENDAR,
     WEEKLY_SUMMARY,
+    COMPUTER_SYNC,
 }
 
 @Composable
@@ -16,6 +17,7 @@ fun MainSectionBar(
     selected: MainSection,
     onCalendarClick: () -> Unit,
     onWeeklySummaryClick: () -> Unit,
+    onComputerSyncClick: () -> Unit,
 ) {
     NavigationBar(
         containerColor = SurfaceWarm,
@@ -32,6 +34,12 @@ fun MainSectionBar(
             onClick = onWeeklySummaryClick,
             icon = { Text("周", style = MaterialTheme.typography.titleMedium) },
             label = { Text("周总结") },
+        )
+        NavigationBarItem(
+            selected = selected == MainSection.COMPUTER_SYNC,
+            onClick = onComputerSyncClick,
+            icon = { Text("联", style = MaterialTheme.typography.titleMedium) },
+            label = { Text("电脑同步") },
         )
     }
 }

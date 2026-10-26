@@ -110,6 +110,15 @@ class LocalSnapshotStorage(
     fun resolvePath(relativePath: String): String =
         File(rootDirectory, relativePath).absolutePath
 
+    fun resolveExistingFile(relativePath: String): File? {
+        val root = rootDirectory.canonicalFile
+        val candidate = File(root, relativePath).canonicalFile
+        val isInsideRoot = candidate.path.startsWith(
+            root.path + File.separator,
+        )
+        return candidate.takeIf { isInsideRoot && it.isFile }
+    }
+
     fun delete(relativePath: String) {
         File(rootDirectory, relativePath).delete()
     }

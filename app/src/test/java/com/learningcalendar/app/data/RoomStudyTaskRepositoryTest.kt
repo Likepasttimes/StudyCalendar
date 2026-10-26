@@ -5,6 +5,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.learningcalendar.app.data.local.LearningCalendarDatabase
 import com.learningcalendar.app.data.local.LocalSnapshotStorage
+import com.learningcalendar.app.data.sync.ComputerSyncRepository
+import com.sun.net.httpserver.HttpServer
 import com.learningcalendar.app.domain.MasteryLevel
 import com.learningcalendar.app.domain.SnapshotKind
 import com.learningcalendar.app.domain.TaskSection
@@ -16,6 +18,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.UUID
 import java.io.File
+import java.net.InetSocketAddress
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.zip.ZipFile
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -35,6 +40,7 @@ class RoomStudyTaskRepositoryTest {
     private lateinit var context: Context
     private lateinit var database: LearningCalendarDatabase
     private lateinit var repository: RoomStudyTaskRepository
+    private lateinit var snapshotStorage: LocalSnapshotStorage
     private var clock = 10_000L
     private val today = LocalDate.of(2026, 10, 25)
 
@@ -45,9 +51,10 @@ class RoomStudyTaskRepositoryTest {
             context,
             LearningCalendarDatabase::class.java,
         ).allowMainThreadQueries().build()
+        snapshotStorage = LocalSnapshotStorage(context)
         repository = RoomStudyTaskRepository(
             database = database,
-            snapshotStorage = LocalSnapshotStorage(context),
+            snapshotStorage = snapshotStorage,
             todayProvider = { today },
             nowProvider = { clock++ },
         )
@@ -442,6 +449,102 @@ class RoomStudyTaskRepositoryTest {
         assertTrue(attachments.none { File(it.localPath).exists() })
         photoFile.delete()
         documentFile.delete()
+    }
+
+    @Test
+    fun computerSyncBackupContainsEveryRecordTypeAndAttachment() = runTest {
+        val taskId = repository.createTask("电脑同步", today, null, TaskSection.NEW)
+        val cardId = repository.addCard(taskId, "目标", "动作", "标准")
+        val snapshotFile = File(context.cacheDir, "sync-photo.jpg")
+        val errorFile = File(context.cacheDir, "sync-error.pdf")
+        val weekFile = File(context.cacheDir, "sync-week.docx")
+        snapshotFile.writeBytes(byteArrayOf(1))
+        errorFile.writeBytes(byteArrayOf(2))
+        weekFile.writeBytes(byteArrayOf(3))
+
+        repository.importSnapshot(
+            cardId,
+            android.net.Uri.fromFile(snapshotFile),
+            SnapshotKind.PHOTO,
+        )
+        val errorRecordId = repository.createErrorRecord(cardId, "单位遗漏", "")
+        repository.importErrorAttachment(
+            errorRecordId,
+            android.net.Uri.fromFile(errorFile),
+            SnapshotKind.FILE,
+        )
+        repository.importWeekSummaryDocument(
+            today,
+            android.net.Uri.fromFile(weekFile),
+        )
+        val backup = ComputerSyncRepository(
+            context = context,
+            database = database,
+            snapshotStorage = snapshotStorage,
+        ).createBackupForTest()
+
+        try {
+            ZipFile(backup).use { zip ->
+                val manifest = zip.getInputStream(
+                    zip.getEntry("manifest.json"),
+                ).bufferedReader().use { it.readText() }
+                val manifestJson = org.json.JSONObject(manifest)
+                val counts = manifestJson.getJSONObject("counts")
+                val tables = manifestJson.getJSONObject("tables")
+                assertEquals(1, counts.getInt("studyTasks"))
+                assertEquals(1, counts.getInt("contentCards"))
+                assertEquals(3, counts.getInt("attachments"))
+                assertTrue(tables.has("error_screenshots"))
+                assertTrue(tables.has("week_summary_documents"))
+                assertEquals(
+                    3,
+                    zip.entries().asSequence().count { it.name.startsWith("files/") },
+                )
+            }
+        } finally {
+            backup.delete()
+            snapshotFile.delete()
+            errorFile.delete()
+            weekFile.delete()
+        }
+    }
+
+    @Test
+    fun computerSyncStoresTokenAndUsesItForAutomaticSync() = runTest {
+        val issuedToken = "a".repeat(64)
+        val pairingHeaders = CopyOnWriteArrayList<String?>()
+        val tokenHeaders = CopyOnWriteArrayList<String?>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/v1/sync") { exchange ->
+            pairingHeaders += exchange.requestHeaders.getFirst("X-Pairing-Code")
+            tokenHeaders += exchange.requestHeaders.getFirst("X-Sync-Token")
+            exchange.requestBody.readBytes()
+            val response = """{"ok":true,"message":"同步完成","syncToken":"$issuedToken"}"""
+                .toByteArray(Charsets.UTF_8)
+            exchange.sendResponseHeaders(200, response.size.toLong())
+            exchange.responseBody.use { it.write(response) }
+        }
+        server.start()
+        try {
+            val syncRepository = ComputerSyncRepository(
+                context = context,
+                database = database,
+                snapshotStorage = snapshotStorage,
+            )
+            syncRepository.syncToComputer(
+                host = "127.0.0.1",
+                portText = server.address.port.toString(),
+                pairingCode = "123456",
+            )
+            assertTrue(syncRepository.autoSyncIfConfigured())
+
+            assertEquals("123456", pairingHeaders.first())
+            assertNull(tokenHeaders.first())
+            assertNull(pairingHeaders.last())
+            assertEquals(issuedToken, tokenHeaders.last())
+        } finally {
+            server.stop(0)
+        }
     }
 
     @Test

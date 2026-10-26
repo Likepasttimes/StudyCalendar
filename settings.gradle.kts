@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "LearningCalendar"
 include(":app")
+include(":windowsApp")

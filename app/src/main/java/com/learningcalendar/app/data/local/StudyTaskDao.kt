@@ -56,6 +56,9 @@ interface StudyTaskDao {
     @Query("SELECT * FROM study_tasks ORDER BY scheduledDate, createdAtEpochMillis, id")
     fun observeAllTasks(): Flow<List<StudyTaskEntity>>
 
+    @Query("SELECT * FROM study_tasks ORDER BY scheduledDate, createdAtEpochMillis, id")
+    suspend fun getAllTasksForSync(): List<StudyTaskEntity>
+
     @Query("SELECT COUNT(*) FROM study_tasks")
     suspend fun taskCount(): Int
 
@@ -125,6 +128,14 @@ interface StudyTaskDao {
         """,
     )
     suspend fun getCards(taskId: String): List<TaskContentCardEntity>
+
+    @Query(
+        """
+        SELECT * FROM task_content_cards
+        ORDER BY taskId, sortOrder ASC, createdAtEpochMillis ASC, id ASC
+        """,
+    )
+    suspend fun getAllCardsForSync(): List<TaskContentCardEntity>
 
     @Query("SELECT * FROM task_content_cards WHERE id = :cardId LIMIT 1")
     fun observeCard(cardId: String): Flow<TaskContentCardEntity?>
@@ -197,6 +208,14 @@ interface StudyTaskDao {
     )
     suspend fun getSnapshotsForTask(taskId: String): List<LearningSnapshotEntity>
 
+    @Query(
+        """
+        SELECT * FROM learning_snapshots
+        ORDER BY cardId, createdAtEpochMillis ASC, id ASC
+        """,
+    )
+    suspend fun getAllSnapshotsForSync(): List<LearningSnapshotEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertSnapshot(snapshot: LearningSnapshotEntity)
 
@@ -214,6 +233,14 @@ interface StudyTaskDao {
         """,
     )
     fun observeErrorRecords(cardId: String): Flow<List<ErrorRecordEntity>>
+
+    @Query(
+        """
+        SELECT * FROM error_records
+        ORDER BY cardId, createdAtEpochMillis ASC, id ASC
+        """,
+    )
+    suspend fun getAllErrorRecordsForSync(): List<ErrorRecordEntity>
 
     @Query("SELECT * FROM error_records WHERE id = :recordId LIMIT 1")
     suspend fun getErrorRecord(recordId: String): ErrorRecordEntity?
@@ -249,6 +276,14 @@ interface StudyTaskDao {
         """,
     )
     suspend fun getErrorScreenshotsForTask(taskId: String): List<ErrorScreenshotEntity>
+
+    @Query(
+        """
+        SELECT * FROM error_screenshots
+        ORDER BY errorRecordId, createdAtEpochMillis ASC, id ASC
+        """,
+    )
+    suspend fun getAllErrorScreenshotsForSync(): List<ErrorScreenshotEntity>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertErrorRecord(record: ErrorRecordEntity)
@@ -313,6 +348,14 @@ interface StudyTaskDao {
         startTimestamp: Long,
         endTimestamp: Long,
     ): Flow<List<WeekSummaryDocumentEntity>>
+
+    @Query(
+        """
+        SELECT * FROM week_summary_documents
+        ORDER BY weekStartDate ASC, uploadedAtEpochMillis ASC, id ASC
+        """,
+    )
+    suspend fun getAllWeekSummaryDocumentsForSync(): List<WeekSummaryDocumentEntity>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertWeekSummaryDocument(document: WeekSummaryDocumentEntity)

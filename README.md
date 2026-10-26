@@ -1,19 +1,13 @@
-# 学习日历 V2.3.2
+# 学习日历 V2.5.0
 
-“学习日历”是一款面向手机竖屏、完全离线的学习任务管理 App。V2.3.2 在任务卡片、验收、间隔复习、学习快照、周总结和错误记录基础上优化错误记录卡片操作区。
+“学习日历”包含 Android 手机端和 Windows 桌面端。Android 端继续提供任务、验收、复习、学习快照、周总结和错误记录；Windows 端采用左侧导航、右侧内容的宽屏布局，并可接收手机主动推送的完整本地数据快照。两端之间只在同一局域网内直连，不接入账号、云盘或第三方后端。
 
 ## 运行方式
 
-- 环境：Android Studio、JDK 17 或更高版本、Android SDK Platform 37.2。
+- Android 环境：Android Studio、JDK 17 或更高版本、Android SDK Platform 37.2。
 - 在 Android Studio 中打开当前项目目录，等待 Gradle 同步后运行 `app`。
-- 命令行验证：
-
-```powershell
-.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
-```
-
-- 如从 V1 工作区升级后首次出现 Room 生成类缺失，执行一次 `.\gradlew.bat clean` 后再构建。
-- 已生成的 V2.3.2 安装包：项目根目录下的 `学习日历-V2.3.2-debug.apk`
+- Android 安装包统一保存在 `Android安装包` 文件夹。
+- 已生成的 V2.5.0 安装包：`Android安装包\学习日历-Android-V2.5.0-debug.apk`
 - 标准 APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
 - 使用 ADB 安装：
 
@@ -21,7 +15,30 @@
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-## V2 功能
+- Windows 软件统一保存在 `Windows安装包` 文件夹。
+- Windows 推荐安装版：运行 `Windows安装包\学习日历-Windows-V1.3.0-安装程序.exe`，按提示完成安装。安装过程中可选择数据保存位置；程序会安装到固定的用户程序目录，并创建开始菜单和桌面快捷方式。
+- 以后升级时直接运行新版安装程序，无需先卸载旧版，也不需要手动解压或移动程序。
+- Windows 便携版备用：解压 `Windows安装包\学习日历-Windows-V1.3.0.zip`，运行 `学习日历\学习日历.exe`。
+- Windows 首次启动如出现防火墙提示，请允许专用网络访问，否则手机无法连接。
+- 手机与电脑必须连接同一 Wi-Fi。打开 Windows 版“电脑同步”，在手机底部进入“电脑同步”，填写电脑地址、端口和 6 位配对码，再点击“同步全部数据到电脑”。
+- Windows 安装版与便携版使用同一份用户数据目录。升级、切换安装版或重新运行安装程序都不会删除已同步数据。
+- 数据保存位置在安装向导中单独选择，默认优先建议 `D:\学习日历数据`；也可以选择其他非 C 盘文件夹。
+
+- 命令行验证：
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+.\gradlew.bat :windowsApp:test :windowsApp:windowsFatJar
+.\package-android.ps1
+.\windowsApp\package-windows.ps1
+```
+
+- 后续 Android 版本运行 `package-android.ps1`，APK 会按版本号写入 `Android安装包`。
+- 后续 Windows 版本运行 `windowsApp\package-windows.ps1`，安装程序和便携包会按版本号写入 `Windows安装包`。
+
+- 如从 V1 工作区升级后首次出现 Room 生成类缺失，执行一次 `.\gradlew.bat clean` 后再构建。
+
+## Android 功能
 
 - 保留 V1 的当前月、今天标记、日期选择、月份滑动/按钮切换和“回到今天”。
 - 点击日期后，在月历下方按时间顺序展示当天全部任务；每个任务独立成框，可继续进入当天任务页。
@@ -49,12 +66,37 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 - 错误记录卡片包含必填错误点和选填错误描述，并可上传、查看和删除多张截图。
 - 新建错误记录卡片时即可预选照片和普通文件，保存卡片时一并导入；附件失败会回滚新建记录。
 - 所有 CRUD、完成状态、掌握度和复习链均持久化到本机 Room 数据库。
+- 底部增加“电脑同步”入口；同步前校验电脑地址、端口和 6 位配对码。
+- 同步包包含全部任务卡、内容卡、完成状态、掌握度、学习快照、错误记录、周总结和实际附件文件。
+- 首次配对成功后保存长期同步凭证；之后任务、内容卡、验收、错误记录、周总结或附件发生变化时，会自动向同一台电脑推送最新数据。
+- 电脑同步仅新增 `INTERNET` 与 `ACCESS_LOCAL_NETWORK` 权限；照片和文件选择继续使用系统选择器，不申请存储、相机、日历或通知权限。
+
+## Windows V1.3.0 功能
+
+- 主窗口约按 1:5 划分左侧导航和右侧内容区。
+- 左侧只提供“学习任务 / 周总结 / 电脑同步”三个主入口，与手机端的信息层级一致。
+- 学习任务页显示可展开/收起的月历；收起后显示所选日期所在整周。
+- 任务名称保持固定；任务卡右侧提供“任务详情”按钮，弹窗展示内容卡片、验收状态、掌握度、学习快照和错误记录。
+- 学习快照和错误记录的附件可从对应任务内容卡片中直接打开。
+- 周总结支持上一周、下一周、回到本周，查看本周任务及任务详情。
+- 周总结支持在电脑上上传 docx/pdf、打开报告和删除报告。
+- 电脑同步页只显示当前无线网卡的 IPv4 地址，不再混入 VMware、WSL、VPN 等虚拟网卡地址。
+- 标题与说明固定在同一行，内容滚动时标题位置不变。
+- 同步页的连接信息与最新快照统一左对齐，减少不一致的空白。
+- 电脑收到自动同步后，当前学习任务、学习快照、周总结或错误记录页面会立即刷新。
+- Windows 接收服务只接受带正确配对码、正确格式版本和大小限制内的同步包。
+- 新快照先解压并校验，成功后才切换为当前快照；上传中断不会覆盖上一份有效数据。
+- 每次同步的完整快照保存在安装时选择的“数据文件夹”下的 `snapshots` 子目录。
+- 安装时选择的数据目录保存在 `%LOCALAPPDATA%\LearningCalendar\data-location.properties`，该文件只记录路径，不保存同步内容。
+- Windows 安装程序使用固定升级标识；后续版本保持该标识时可直接覆盖升级。
+- 程序安装目录与用户数据目录相互独立，因此替换程序文件不会影响任务、周总结、错误记录和附件。
+- 从旧版本升级到自定义数据目录时，如果旧 `%LOCALAPPDATA%\LearningCalendar` 中已有同步快照，会复制到新位置并保留旧备份。
 
 ## 升级与数据保留
 
-- 应用 `applicationId` 保持不变，V2.3.2 使用 `versionCode = 7` 覆盖升级。
+- 应用 `applicationId` 保持不变，V2.5.0 使用 `versionCode = 9` 覆盖升级。
 - Room 数据库升级到版本 3，提供版本 1 → 2 → 3 的非破坏性迁移，不使用破坏性重建。
-- 直接覆盖安装 V2.3.2 会保留已有任务卡片、内容卡片、完成状态、掌握度和学习快照。
+- 直接覆盖安装 V2.5.0 会保留已有任务卡片、内容卡片、完成状态、掌握度和学习快照。
 
 ## 数据模型
 
@@ -76,6 +118,8 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
   - 记录 V2 示例数据是否已经初始化，避免用户清空任务后重新启动又被填入示例。
 
 DAO 负责查询与更新，`RoomStudyTaskRepository` 负责事务和领域转换。UI 只通过 Repository 与 ViewModel 接收 Flow 数据。
+
+电脑同步使用独立的数据层：`ComputerSyncRepository` 在一个数据库读取事务中导出全部业务表，生成 `manifest.json`，并写入所有快照、错误记录附件和周总结文件。格式版本当前为 `1`。
 
 ## 间隔复习规则
 
@@ -111,13 +155,18 @@ DAO 负责查询与更新，`RoomStudyTaskRepository` 负责事务和领域转�
 - `ui/acceptance/`：验收完成和五级掌握度。
 - `ui/errors/`：错误记录卡片 CRUD 与截图。
 - `ui/weekly/`：周总结入口、周详情、文档上传和本周任务查阅。
+- `ui/sync/`：Android 电脑连接、数据打包上传与同步状态。
+- `data/sync/ComputerSyncRepository.kt`：完整同步包生成和局域网 HTTP 上传。
+- `windowsApp/src/main/kotlin/`：Windows 桌面界面、接收服务、快照校验与本地保存。
+- `windowsApp/package-windows.ps1`：生成 Windows 应用目录和 ZIP 的可重复打包脚本。
 
 ## 测试结果
 
 最后一次验证结果：
 
-- `testDebugUnitTest`：32 项通过，0 失败，0 错误，0 跳过。
-- Room 集成测试：18 项通过。
+- `testDebugUnitTest`：34 项通过，0 失败，0 错误，0 跳过。
+- Room 集成测试：20 项通过。
+- Windows 桌面与接收服务测试：4 项通过。
 - 日期与复习规则测试：8 项通过。
 - 月历状态测试：3 项通过。
 - 当天任务分区状态测试：1 项通过。
@@ -138,9 +187,12 @@ DAO 负责查询与更新，`RoomStudyTaskRepository` 负责事务和领域转�
 - 照片快照复制到 App 本地文件夹，并在删除内容卡片时同步清理。
 - 学习快照可单独删除；错误记录的增删改查、截图上传/删除和级联文件清理。
 - 周范围为周一至周日，周总结 docx 上传与删除。
+- 完整同步包包含所有业务记录及三类附件，并可由 Windows 接收端校验和安装。
+- Windows 服务正确校验配对码，错误配对请求不会写入快照。
+- Windows 自定义数据目录可解析中文路径，旧快照迁移后当前快照指针会正确更新。
 - 应用 Application、Room 数据库与主 Activity 可正常启动的冒烟测试。
 
-运行 Room/Robolectric 测试时，首次需要下载测试用 Android 运行时。该运行时只用于开发测试，不进入 App，App 本身仍完全离线。
+运行 Room/Robolectric 测试时，首次需要下载测试用 Android 运行时。该运行时只用于开发测试，不进入 App。App 业务数据仍保存在本机；只有在用户主动发起电脑同步时，才通过局域网向已配对的电脑发送数据。
 
 ## 荣耀手机竖屏与无障碍
 
@@ -158,5 +210,6 @@ DAO 负责查询与更新，`RoomStudyTaskRepository` 负责事务和领域转�
 - 当前环境未连接荣耀 600 Pro 真机，尚未做真机触摸、手势、圆角和屏幕阅读器人工验收。
 - 照片与录音的真实系统选择器交互尚未在真机上人工验收；文件复制和本地持久化已通过 JVM/Robolectric 测试。
 - 当前未配置 Android 模拟器，因此没有执行 Compose 导航的端到端仪器测试；数据库事务、持久化与领域规则已使用 Robolectric/JVM 集成测试覆盖。
-- V2 不包含通知、系统日历权限、账号、云同步、分享、番茄钟、打卡、统计、AI、自定义复习周期或拖拽排序。
+- 当前电脑同步为同一局域网内的一对一单向同步，不包含互联网远程访问、账号、云盘、多设备同步或双向冲突合并。
+- V2 不包含通知、系统日历权限、分享、番茄钟、打卡、统计、AI、自定义复习周期或拖拽排序。
 
