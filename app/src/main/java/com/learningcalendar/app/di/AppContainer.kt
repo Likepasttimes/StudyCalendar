@@ -18,7 +18,10 @@ class AppContainer(context: Context) {
         context.applicationContext,
         LearningCalendarDatabase::class.java,
         "learning_calendar.db",
-    ).addMigrations(LearningCalendarDatabase.MIGRATION_1_2).build()
+    ).addMigrations(
+        LearningCalendarDatabase.MIGRATION_1_2,
+        LearningCalendarDatabase.MIGRATION_2_3,
+    ).build()
 
     val taskRepository: StudyTaskRepository = RoomStudyTaskRepository(
         database = database,

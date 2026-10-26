@@ -123,6 +123,34 @@ class AcceptanceViewModel(
         }
     }
 
+    fun deleteSnapshot(
+        snapshotId: String,
+        onResult: (Boolean) -> Unit,
+    ) {
+        if (isSaving.value) {
+            onResult(false)
+            return
+        }
+        isSaving.value = true
+        viewModelScope.launch {
+            try {
+                repository.deleteLearningSnapshot(snapshotId)
+                _feedback.emit(UiFeedback("学习快照已删除"))
+                onResult(true)
+            } catch (error: Exception) {
+                _feedback.emit(
+                    UiFeedback(
+                        text = error.toChineseUserMessage(),
+                        isError = true,
+                    ),
+                )
+                onResult(false)
+            } finally {
+                isSaving.value = false
+            }
+        }
+    }
+
     private fun updateAcceptance(completed: Boolean, masteryLevel: Int?) {
         if (isSaving.value) {
             return

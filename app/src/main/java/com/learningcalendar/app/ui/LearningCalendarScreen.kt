@@ -108,6 +108,7 @@ fun LearningCalendarScreen(
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onTodayClick: () -> Unit,
+    bottomBar: @Composable () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var calendarExpanded by rememberSaveable { mutableStateOf(true) }
@@ -124,6 +125,7 @@ fun LearningCalendarScreen(
         containerColor = WarmBackground,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = bottomBar,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showQuickCreate = true },

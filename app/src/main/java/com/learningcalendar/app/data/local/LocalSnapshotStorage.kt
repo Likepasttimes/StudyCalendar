@@ -23,6 +23,41 @@ class LocalSnapshotStorage(
         cardId: String,
         sourceUri: Uri,
         kind: SnapshotKind,
+    ): StoredSnapshotFile = saveInFolder(cardId, sourceUri, kind)
+
+    fun saveErrorScreenshot(
+        errorRecordId: String,
+        sourceUri: Uri,
+    ): StoredSnapshotFile = saveInFolder(
+        relativeFolder = "错误记录/$errorRecordId",
+        sourceUri = sourceUri,
+        kind = SnapshotKind.PHOTO,
+    )
+
+    fun saveErrorFile(
+        errorRecordId: String,
+        sourceUri: Uri,
+    ): StoredSnapshotFile = saveInFolder(
+        relativeFolder = "错误记录/$errorRecordId",
+        sourceUri = sourceUri,
+        kind = SnapshotKind.FILE,
+    )
+
+    fun saveWeekSummary(
+        weekStartDate: String,
+        sourceUri: Uri,
+    ): StoredSnapshotFile = saveInFolder(
+        relativeFolder = "周总结/$weekStartDate",
+        sourceUri = sourceUri,
+        kind = SnapshotKind.FILE,
+        allowedExtensions = setOf("docx", "pdf"),
+    )
+
+    private fun saveInFolder(
+        relativeFolder: String,
+        sourceUri: Uri,
+        kind: SnapshotKind,
+        allowedExtensions: Set<String>? = null,
     ): StoredSnapshotFile {
         val root = rootDirectory
         if (!root.exists() && !root.mkdirs()) {
@@ -31,9 +66,9 @@ class LocalSnapshotStorage(
         if (!root.isDirectory) {
             throw IOException("学习快照路径不是文件夹")
         }
-        val cardDirectory = File(root, cardId)
-        if (!cardDirectory.exists() && !cardDirectory.mkdirs()) {
-            throw IOException("无法创建卡片快照文件夹")
+        val destinationDirectory = File(root, relativeFolder)
+        if (!destinationDirectory.exists() && !destinationDirectory.mkdirs()) {
+            throw IOException("无法创建快照文件夹")
         }
 
         val sourceName = queryDisplayName(sourceUri)
@@ -44,8 +79,11 @@ class LocalSnapshotStorage(
             SnapshotKind.FILE -> "学习文件"
         }
         val extension = resolveExtension(sourceName, mimeType, kind)
+        if (allowedExtensions != null && extension !in allowedExtensions) {
+            throw IOException("只支持上传 docx 或 pdf 文档")
+        }
         val targetFile = File(
-            cardDirectory,
+            destinationDirectory,
             "snapshot_${UUID.randomUUID()}.$extension",
         )
 
@@ -81,7 +119,7 @@ class LocalSnapshotStorage(
     }
 
     private fun queryDisplayName(uri: Uri): String? {
-        return resolver.query(
+        val queriedName = resolver.query(
             uri,
             arrayOf(OpenableColumns.DISPLAY_NAME),
             null,
@@ -94,6 +132,9 @@ class LocalSnapshotStorage(
                 null
             }
         }
+        return queriedName ?: uri.path
+            ?.takeIf { uri.scheme == "file" }
+            ?.let { path -> File(path).name }
     }
 
     private fun resolveExtension(
@@ -113,6 +154,8 @@ class LocalSnapshotStorage(
             "audio/mpeg" -> "mp3"
             "audio/mp4", "audio/x-m4a" -> "m4a"
             "audio/wav", "audio/x-wav" -> "wav"
+            "application/pdf" -> "pdf"
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "docx"
             else -> when (kind) {
                 SnapshotKind.PHOTO -> "jpg"
                 SnapshotKind.AUDIO -> "audio"

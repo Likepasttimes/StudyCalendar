@@ -11,6 +11,9 @@ import com.learningcalendar.app.domain.TaskSection
 import com.learningcalendar.app.domain.TaskSourceType
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.YearMonth
+import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import java.io.File
 import kotlinx.coroutines.flow.first
@@ -337,6 +340,137 @@ class RoomStudyTaskRepositoryTest {
 
         assertTrue(snapshot.localPath.isNotEmpty())
         assertFalse(File(snapshot.localPath).exists())
+        sourceFile.delete()
+    }
+
+    @Test
+    fun learningSnapshotCanBeDeletedIndividually() = runTest {
+        val taskId = repository.createTask("快照删除", today, null, TaskSection.NEW)
+        val cardId = repository.addCard(taskId, "目标", "动作", "标准")
+        val sourceFile = File(context.cacheDir, "delete-snapshot.jpg")
+        sourceFile.writeBytes(byteArrayOf(1, 2, 3))
+
+        val snapshotId = repository.importSnapshot(
+            cardId,
+            android.net.Uri.fromFile(sourceFile),
+            SnapshotKind.PHOTO,
+        )
+        val snapshot = repository.observeSnapshots(cardId).first().single()
+
+        repository.deleteLearningSnapshot(snapshotId)
+
+        assertTrue(repository.observeSnapshots(cardId).first().isEmpty())
+        assertFalse(File(snapshot.localPath).exists())
+        sourceFile.delete()
+    }
+
+    @Test
+    fun errorRecordSupportsCrudAndScreenshotCleanup() = runTest {
+        val taskId = repository.createTask("错误记录", today, null, TaskSection.NEW)
+        val cardId = repository.addCard(taskId, "目标", "动作", "标准")
+        val recordId = repository.createErrorRecord(cardId, "单位一判断错误", "把总人数当成单位一")
+
+        var records = repository.observeErrorRecords(cardId).first()
+        assertEquals(1, records.size)
+        assertEquals("单位一判断错误", records.single().errorPoint)
+
+        repository.updateErrorRecord(recordId, "单位一选错", "没有先确认整体数量")
+        records = repository.observeErrorRecords(cardId).first()
+        assertEquals("单位一选错", records.single().errorPoint)
+        assertEquals("没有先确认整体数量", records.single().description)
+
+        val sourceFile = File(context.cacheDir, "error-shot.jpg")
+        sourceFile.writeBytes(byteArrayOf(9, 8, 7))
+        repository.importErrorScreenshot(recordId, android.net.Uri.fromFile(sourceFile))
+        val screenshot = repository.observeErrorScreenshotsForCard(cardId).first().single()
+        assertTrue(File(screenshot.localPath).exists())
+
+        repository.deleteErrorScreenshot(screenshot.id)
+        assertTrue(repository.observeErrorScreenshotsForCard(cardId).first().isEmpty())
+        assertFalse(File(screenshot.localPath).exists())
+
+        val replacementFile = File(context.cacheDir, "error-shot-2.jpg")
+        replacementFile.writeBytes(byteArrayOf(6, 5, 4))
+        repository.importErrorScreenshot(recordId, android.net.Uri.fromFile(replacementFile))
+        val replacement = repository.observeErrorScreenshotsForCard(cardId).first().single()
+
+        repository.deleteErrorRecord(recordId)
+
+        assertTrue(repository.observeErrorRecords(cardId).first().isEmpty())
+        assertFalse(File(replacement.localPath).exists())
+        sourceFile.delete()
+        replacementFile.delete()
+    }
+
+    @Test
+    fun errorRecordAllowsBlankDescription() = runTest {
+        val taskId = repository.createTask("选填描述", today, null, TaskSection.NEW)
+        val cardId = repository.addCard(taskId, "目标", "动作", "标准")
+
+        val recordId = repository.createErrorRecord(cardId, "单位遗漏", "   ")
+        val created = repository.observeErrorRecords(cardId).first().single()
+        assertEquals("", created.description)
+
+        repository.updateErrorRecord(recordId, "单位遗漏", "")
+        val updated = repository.observeErrorRecords(cardId).first().single()
+        assertEquals("", updated.description)
+    }
+
+    @Test
+    fun errorRecordCreationImportsDraftPhotoAndFileAttachments() = runTest {
+        val taskId = repository.createTask("错误附件", today, null, TaskSection.NEW)
+        val cardId = repository.addCard(taskId, "目标", "动作", "标准")
+        val photoFile = File(context.cacheDir, "draft-photo.jpg")
+        val documentFile = File(context.cacheDir, "draft-error.txt")
+        photoFile.writeBytes(byteArrayOf(1, 2, 3))
+        documentFile.writeBytes(byteArrayOf(4, 5, 6))
+
+        val recordId = repository.createErrorRecordWithAttachments(
+            cardId = cardId,
+            errorPoint = "步骤遗漏",
+            description = "忘记写单位",
+            photoUris = listOf(android.net.Uri.fromFile(photoFile)),
+            fileUris = listOf(android.net.Uri.fromFile(documentFile)),
+        )
+
+        val attachments = repository.observeErrorScreenshotsForCard(cardId).first()
+        assertEquals(2, attachments.size)
+        assertTrue(attachments.all { File(it.localPath).exists() })
+        assertEquals(1, repository.observeErrorRecords(cardId).first().size)
+
+        repository.deleteErrorRecord(recordId)
+        assertTrue(attachments.none { File(it.localPath).exists() })
+        photoFile.delete()
+        documentFile.delete()
+    }
+
+    @Test
+    fun weeklySummaryDocumentCanBeUploadedAndDeleted() = runTest {
+        val weekStart = LocalDate.of(2026, 10, 26)
+        val sourceFile = File(context.cacheDir, "weekly-summary.docx")
+        sourceFile.writeBytes(byteArrayOf(4, 3, 2, 1))
+
+        val documentId = repository.importWeekSummaryDocument(
+            weekStart,
+            android.net.Uri.fromFile(sourceFile),
+        )
+        val document = repository.observeWeekSummaryDocuments(weekStart).first().single()
+        assertTrue(document.displayName.endsWith(".docx"))
+        assertTrue(File(document.localPath).exists())
+        assertEquals(
+            1,
+            repository.observeWeekSummaryDocumentsForMonth(
+                YearMonth.from(
+                    Instant.ofEpochMilli(document.uploadedAtEpochMillis)
+                        .atZone(ZoneId.systemDefault()),
+                ),
+            ).first().size,
+        )
+
+        repository.deleteWeekSummaryDocument(documentId)
+
+        assertTrue(repository.observeWeekSummaryDocuments(weekStart).first().isEmpty())
+        assertFalse(File(document.localPath).exists())
         sourceFile.delete()
     }
 

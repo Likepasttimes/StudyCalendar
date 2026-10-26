@@ -19,12 +19,24 @@ import com.learningcalendar.app.ui.day.DayTasksViewModelFactory
 import com.learningcalendar.app.ui.detail.TaskDetailScreen
 import com.learningcalendar.app.ui.detail.TaskDetailViewModel
 import com.learningcalendar.app.ui.detail.TaskDetailViewModelFactory
+import com.learningcalendar.app.ui.errors.ErrorRecordsScreen
+import com.learningcalendar.app.ui.errors.ErrorRecordsViewModel
+import com.learningcalendar.app.ui.errors.ErrorRecordsViewModelFactory
+import com.learningcalendar.app.ui.weekly.WeekSummaryDetailScreen
+import com.learningcalendar.app.ui.weekly.WeekSummaryViewModel
+import com.learningcalendar.app.ui.weekly.WeekSummaryViewModelFactory
+import com.learningcalendar.app.ui.weekly.WeeklySummaryScreen
+import com.learningcalendar.app.ui.weekly.WeeklySummaryOverviewViewModel
+import com.learningcalendar.app.ui.weekly.WeeklySummaryOverviewViewModelFactory
 import java.time.LocalDate
 
 private const val CALENDAR_ROUTE = "calendar"
 private const val DAY_ROUTE = "day/{date}"
 private const val TASK_ROUTE = "task/{taskId}"
 private const val ACCEPTANCE_ROUTE = "acceptance/{cardId}"
+private const val WEEKLY_ROUTE = "weekly-summary"
+private const val WEEK_DETAIL_ROUTE = "week-detail/{weekStart}"
+private const val ERROR_RECORDS_ROUTE = "errors/{cardId}"
 
 @Composable
 fun LearningCalendarApp(repository: StudyTaskRepository) {
@@ -66,6 +78,70 @@ fun LearningCalendarApp(repository: StudyTaskRepository) {
                 onPreviousMonth = calendarViewModel::showPreviousMonth,
                 onNextMonth = calendarViewModel::showNextMonth,
                 onTodayClick = calendarViewModel::showToday,
+                bottomBar = {
+                    MainSectionBar(
+                        selected = MainSection.CALENDAR,
+                        onCalendarClick = {},
+                        onWeeklySummaryClick = {
+                            navController.navigate(WEEKLY_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                },
+            )
+        }
+
+        composable(WEEKLY_ROUTE) {
+            val overviewViewModel: WeeklySummaryOverviewViewModel = viewModel(
+                factory = WeeklySummaryOverviewViewModelFactory(repository),
+            )
+            val state by overviewViewModel.uiState.collectAsStateWithLifecycle()
+            WeeklySummaryScreen(
+                state = state,
+                bottomBar = {
+                    MainSectionBar(
+                        selected = MainSection.WEEKLY_SUMMARY,
+                        onCalendarClick = {
+                            navController.popBackStack(CALENDAR_ROUTE, inclusive = false)
+                        },
+                        onWeeklySummaryClick = {},
+                    )
+                },
+                onPreviousWeek = overviewViewModel::previousWeek,
+                onNextWeek = overviewViewModel::nextWeek,
+                onOpenDetail = { weekStart ->
+                    navController.navigate("week-detail/$weekStart")
+                },
+            )
+        }
+
+        composable(
+            route = WEEK_DETAIL_ROUTE,
+            arguments = listOf(navArgument("weekStart") { type = NavType.StringType }),
+        ) { entry ->
+            val weekStart = entry.arguments?.getString("weekStart")
+                ?.let(LocalDate::parse)
+                ?: return@composable
+            val weeklyViewModel: WeekSummaryViewModel = viewModel(
+                key = "week-$weekStart",
+                factory = WeekSummaryViewModelFactory(weekStart, repository),
+            )
+            val state by weeklyViewModel.uiState.collectAsStateWithLifecycle()
+            val saving by weeklyViewModel.saving.collectAsStateWithLifecycle()
+
+            WeekSummaryDetailScreen(
+                state = state,
+                isSaving = saving,
+                feedback = weeklyViewModel.feedback,
+                onBack = { navController.popBackStack() },
+                onOpenTask = { taskId -> navController.navigate("task/$taskId") },
+                onImportDocument = { uri, onResult ->
+                    weeklyViewModel.importDocument(uri, onResult)
+                },
+                onDeleteDocument = { documentId, onResult ->
+                    weeklyViewModel.deleteDocument(documentId, onResult)
+                },
             )
         }
 
@@ -179,6 +255,35 @@ fun LearningCalendarApp(repository: StudyTaskRepository) {
                 onCompletedChange = acceptanceViewModel::setCompleted,
                 onMasterySelected = acceptanceViewModel::selectMastery,
                 onImportSnapshot = acceptanceViewModel::importSnapshot,
+                onDeleteSnapshot = acceptanceViewModel::deleteSnapshot,
+                onOpenErrorRecords = {
+                    navController.navigate("errors/$cardId")
+                },
+            )
+        }
+
+        composable(
+            route = ERROR_RECORDS_ROUTE,
+            arguments = listOf(navArgument("cardId") { type = NavType.StringType }),
+        ) { entry ->
+            val cardId = entry.arguments?.getString("cardId") ?: return@composable
+            val errorsViewModel: ErrorRecordsViewModel = viewModel(
+                key = "errors-$cardId",
+                factory = ErrorRecordsViewModelFactory(cardId, repository),
+            )
+            val state by errorsViewModel.uiState.collectAsStateWithLifecycle()
+            val saving by errorsViewModel.saving.collectAsStateWithLifecycle()
+
+            ErrorRecordsScreen(
+                state = state,
+                isSaving = saving,
+                feedback = errorsViewModel.feedback,
+                onBack = { navController.popBackStack() },
+                onCreate = errorsViewModel::createRecord,
+                onUpdate = errorsViewModel::updateRecord,
+                onDelete = errorsViewModel::deleteRecord,
+                onUploadAttachment = errorsViewModel::importAttachment,
+                onDeleteScreenshot = errorsViewModel::deleteScreenshot,
             )
         }
     }

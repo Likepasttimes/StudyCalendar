@@ -31,6 +31,22 @@ interface StudyTaskDao {
     )
     fun observeTasksForDate(date: String): Flow<List<StudyTaskEntity>>
 
+    @Query(
+        """
+        SELECT * FROM study_tasks
+        WHERE scheduledDate BETWEEN :startDate AND :endDate
+        ORDER BY scheduledDate ASC,
+            CASE WHEN startTime IS NULL THEN 1 ELSE 0 END,
+            startTime ASC,
+            createdAtEpochMillis ASC,
+            id ASC
+        """,
+    )
+    fun observeTasksBetween(
+        startDate: String,
+        endDate: String,
+    ): Flow<List<StudyTaskEntity>>
+
     @Query("SELECT * FROM study_tasks WHERE id = :taskId LIMIT 1")
     fun observeTask(taskId: String): Flow<StudyTaskEntity?>
 
@@ -186,6 +202,126 @@ interface StudyTaskDao {
 
     @Query("DELETE FROM learning_snapshots WHERE id = :snapshotId")
     suspend fun deleteSnapshot(snapshotId: String)
+
+    @Query("SELECT * FROM learning_snapshots WHERE id = :snapshotId LIMIT 1")
+    suspend fun getLearningSnapshot(snapshotId: String): LearningSnapshotEntity?
+
+    @Query(
+        """
+        SELECT * FROM error_records
+        WHERE cardId = :cardId
+        ORDER BY createdAtEpochMillis ASC, id ASC
+        """,
+    )
+    fun observeErrorRecords(cardId: String): Flow<List<ErrorRecordEntity>>
+
+    @Query("SELECT * FROM error_records WHERE id = :recordId LIMIT 1")
+    suspend fun getErrorRecord(recordId: String): ErrorRecordEntity?
+
+    @Query(
+        """
+        SELECT error_screenshots.* FROM error_screenshots
+        INNER JOIN error_records ON error_records.id = error_screenshots.errorRecordId
+        WHERE error_records.cardId = :cardId
+        ORDER BY error_screenshots.createdAtEpochMillis ASC, error_screenshots.id ASC
+        """,
+    )
+    fun observeErrorScreenshotsForCard(cardId: String): Flow<List<ErrorScreenshotEntity>>
+
+    @Query("SELECT * FROM error_screenshots WHERE errorRecordId = :recordId")
+    suspend fun getErrorScreenshotsForRecord(recordId: String): List<ErrorScreenshotEntity>
+
+    @Query(
+        """
+        SELECT error_screenshots.* FROM error_screenshots
+        INNER JOIN error_records ON error_records.id = error_screenshots.errorRecordId
+        WHERE error_records.cardId = :cardId
+        """,
+    )
+    suspend fun getErrorScreenshotsForCard(cardId: String): List<ErrorScreenshotEntity>
+
+    @Query(
+        """
+        SELECT error_screenshots.* FROM error_screenshots
+        INNER JOIN error_records ON error_records.id = error_screenshots.errorRecordId
+        INNER JOIN task_content_cards ON task_content_cards.id = error_records.cardId
+        WHERE task_content_cards.taskId = :taskId
+        """,
+    )
+    suspend fun getErrorScreenshotsForTask(taskId: String): List<ErrorScreenshotEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertErrorRecord(record: ErrorRecordEntity)
+
+    @Query(
+        """
+        UPDATE error_records
+        SET errorPoint = :errorPoint,
+            description = :description,
+            updatedAtEpochMillis = :updatedAt
+        WHERE id = :recordId
+        """,
+    )
+    suspend fun updateErrorRecord(
+        recordId: String,
+        errorPoint: String,
+        description: String,
+        updatedAt: Long,
+    )
+
+    @Query("DELETE FROM error_records WHERE id = :recordId")
+    suspend fun deleteErrorRecord(recordId: String)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertErrorScreenshot(screenshot: ErrorScreenshotEntity)
+
+    @Query("DELETE FROM error_screenshots WHERE id = :screenshotId")
+    suspend fun deleteErrorScreenshot(screenshotId: String)
+
+    @Query("SELECT * FROM error_screenshots WHERE id = :screenshotId LIMIT 1")
+    suspend fun getErrorScreenshot(screenshotId: String): ErrorScreenshotEntity?
+
+    @Query(
+        """
+        SELECT * FROM week_summary_documents
+        WHERE weekStartDate = :weekStartDate
+        ORDER BY uploadedAtEpochMillis ASC, id ASC
+        """,
+    )
+    fun observeWeekSummaryDocuments(weekStartDate: String): Flow<List<WeekSummaryDocumentEntity>>
+
+    @Query(
+        """
+        SELECT * FROM week_summary_documents
+        WHERE uploadedAtEpochMillis BETWEEN :startMillis AND :endMillis
+        ORDER BY uploadedAtEpochMillis DESC, id ASC
+        """,
+    )
+    fun observeWeekSummaryDocumentsUploadedBetween(
+        startMillis: Long,
+        endMillis: Long,
+    ): Flow<List<WeekSummaryDocumentEntity>>
+
+    @Query(
+        """
+        SELECT * FROM week_summary_documents
+        WHERE uploadedAtEpochMillis BETWEEN :startTimestamp AND :endTimestamp
+        ORDER BY uploadedAtEpochMillis ASC, id ASC
+        """,
+    )
+    fun observeWeekSummaryDocumentsBetween(
+        startTimestamp: Long,
+        endTimestamp: Long,
+    ): Flow<List<WeekSummaryDocumentEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertWeekSummaryDocument(document: WeekSummaryDocumentEntity)
+
+    @Query("SELECT * FROM week_summary_documents WHERE id = :documentId LIMIT 1")
+    suspend fun getWeekSummaryDocument(documentId: String): WeekSummaryDocumentEntity?
+
+    @Query("DELETE FROM week_summary_documents WHERE id = :documentId")
+    suspend fun deleteWeekSummaryDocument(documentId: String)
 
     @Query("SELECT value FROM app_metadata WHERE `key` = :key LIMIT 1")
     suspend fun getMetadata(key: String): String?

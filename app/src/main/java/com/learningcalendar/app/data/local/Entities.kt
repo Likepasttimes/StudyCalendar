@@ -85,6 +85,61 @@ data class LearningSnapshotEntity(
     val createdAtEpochMillis: Long,
 )
 
+@Entity(
+    tableName = "error_records",
+    foreignKeys = [
+        ForeignKey(
+            entity = TaskContentCardEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["cardId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["cardId"])],
+)
+data class ErrorRecordEntity(
+    @PrimaryKey val id: String,
+    val cardId: String,
+    val errorPoint: String,
+    val description: String,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "error_screenshots",
+    foreignKeys = [
+        ForeignKey(
+            entity = ErrorRecordEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["errorRecordId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["errorRecordId"])],
+)
+data class ErrorScreenshotEntity(
+    @PrimaryKey val id: String,
+    val errorRecordId: String,
+    val displayName: String,
+    val relativePath: String,
+    val mimeType: String?,
+    val createdAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "week_summary_documents",
+    indices = [Index(value = ["weekStartDate"])],
+)
+data class WeekSummaryDocumentEntity(
+    @PrimaryKey val id: String,
+    val weekStartDate: String,
+    val displayName: String,
+    val relativePath: String,
+    val mimeType: String?,
+    val uploadedAtEpochMillis: Long,
+)
+
 @Entity(tableName = "app_metadata")
 data class AppMetadataEntity(
     @PrimaryKey val key: String,

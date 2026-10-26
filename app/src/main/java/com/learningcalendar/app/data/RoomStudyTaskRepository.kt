@@ -3,11 +3,16 @@ package com.learningcalendar.app.data
 import android.net.Uri
 import androidx.room.withTransaction
 import com.learningcalendar.app.data.local.AppMetadataEntity
+import com.learningcalendar.app.data.local.ErrorRecordEntity
+import com.learningcalendar.app.data.local.ErrorScreenshotEntity
 import com.learningcalendar.app.data.local.LearningCalendarDatabase
 import com.learningcalendar.app.data.local.LearningSnapshotEntity
 import com.learningcalendar.app.data.local.LocalSnapshotStorage
 import com.learningcalendar.app.data.local.StudyTaskEntity
 import com.learningcalendar.app.data.local.TaskContentCardEntity
+import com.learningcalendar.app.data.local.WeekSummaryDocumentEntity
+import com.learningcalendar.app.domain.ErrorRecord
+import com.learningcalendar.app.domain.ErrorScreenshot
 import com.learningcalendar.app.domain.ReviewSchedule
 import com.learningcalendar.app.domain.LearningSnapshot
 import com.learningcalendar.app.domain.SnapshotKind
@@ -15,8 +20,11 @@ import com.learningcalendar.app.domain.StudyTask
 import com.learningcalendar.app.domain.TaskContentCard
 import com.learningcalendar.app.domain.TaskSection
 import com.learningcalendar.app.domain.TaskSourceType
+import com.learningcalendar.app.domain.WeekSummaryDocument
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.YearMonth
+import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -39,6 +47,14 @@ class RoomStudyTaskRepository(
 
     override fun observeTasksForDate(date: LocalDate): Flow<List<StudyTask>> =
         dao.observeTasksForDate(date.toString()).map { tasks -> tasks.map(StudyTaskEntity::toDomain) }
+
+    override fun observeTasksBetween(
+        startDate: LocalDate,
+        endDate: LocalDate,
+    ): Flow<List<StudyTask>> =
+        dao.observeTasksBetween(startDate.toString(), endDate.toString()).map { tasks ->
+            tasks.map(StudyTaskEntity::toDomain)
+        }
 
     override fun observeTask(taskId: String): Flow<StudyTask?> =
         dao.observeTask(taskId).map { it?.toDomain() }
@@ -124,11 +140,15 @@ class RoomStudyTaskRepository(
         val snapshotFiles = mutableListOf<String>()
         snapshotFiles += dao.getSnapshotsForTask(taskId)
             .map(LearningSnapshotEntity::relativePath)
+        snapshotFiles += dao.getErrorScreenshotsForTask(taskId)
+            .map(ErrorScreenshotEntity::relativePath)
         ReviewSchedule.reviewSequences.forEach { sequence ->
             val review = dao.findAutoReview(taskId, sequence)
             if (review != null) {
                 snapshotFiles += dao.getSnapshotsForTask(review.id)
                     .map(LearningSnapshotEntity::relativePath)
+                snapshotFiles += dao.getErrorScreenshotsForTask(review.id)
+                    .map(ErrorScreenshotEntity::relativePath)
             }
         }
         dao.deleteTask(taskId)
@@ -265,8 +285,11 @@ class RoomStudyTaskRepository(
     override suspend fun deleteCard(cardId: String) {
         val files = dao.getSnapshotsForCard(cardId)
             .map(LearningSnapshotEntity::relativePath)
+        val errorFiles = dao.getErrorScreenshotsForCard(cardId)
+            .map(ErrorScreenshotEntity::relativePath)
         dao.deleteCard(cardId)
         snapshotStorage?.deleteAll(files)
+        snapshotStorage?.deleteAll(errorFiles)
     }
 
     override suspend fun setCardAcceptance(
@@ -309,6 +332,220 @@ class RoomStudyTaskRepository(
             storage.delete(saved.relativePath)
             throw error
         }
+    }
+
+    override suspend fun deleteLearningSnapshot(snapshotId: String) {
+        val snapshot = dao.getLearningSnapshot(snapshotId)
+        dao.deleteSnapshot(snapshotId)
+        snapshot?.let { snapshotStorage?.delete(it.relativePath) }
+    }
+
+    override fun observeErrorRecords(cardId: String): Flow<List<ErrorRecord>> =
+        dao.observeErrorRecords(cardId).map { records ->
+            records.map(ErrorRecordEntity::toDomain)
+        }
+
+    override fun observeErrorScreenshotsForCard(cardId: String): Flow<List<ErrorScreenshot>> =
+        dao.observeErrorScreenshotsForCard(cardId).map { screenshots ->
+            screenshots.map { screenshot ->
+                screenshot.toDomain(
+                    localPath = snapshotStorage?.resolvePath(screenshot.relativePath)
+                        ?: screenshot.relativePath,
+                )
+            }
+        }
+
+    override suspend fun createErrorRecord(
+        cardId: String,
+        errorPoint: String,
+        description: String,
+    ): String {
+        validateErrorRecord(errorPoint)
+        require(dao.getCard(cardId) != null) { "内容卡片不存在" }
+        return database.withTransaction {
+            val now = nowProvider()
+            val recordId = UUID.randomUUID().toString()
+            dao.insertErrorRecord(
+                ErrorRecordEntity(
+                    id = recordId,
+                    cardId = cardId,
+                    errorPoint = errorPoint.trim(),
+                    description = description.trim(),
+                    createdAtEpochMillis = now,
+                    updatedAtEpochMillis = now,
+                ),
+            )
+            recordId
+        }
+    }
+
+    override suspend fun createErrorRecordWithAttachments(
+        cardId: String,
+        errorPoint: String,
+        description: String,
+        photoUris: List<Uri>,
+        fileUris: List<Uri>,
+    ): String {
+        val recordId = createErrorRecord(cardId, errorPoint, description)
+        return try {
+            photoUris.forEach { uri ->
+                importErrorAttachment(recordId, uri, SnapshotKind.PHOTO)
+            }
+            fileUris.forEach { uri ->
+                importErrorAttachment(recordId, uri, SnapshotKind.FILE)
+            }
+            recordId
+        } catch (error: Exception) {
+            deleteErrorRecord(recordId)
+            throw error
+        }
+    }
+
+    override suspend fun updateErrorRecord(
+        recordId: String,
+        errorPoint: String,
+        description: String,
+    ) {
+        validateErrorRecord(errorPoint)
+        dao.updateErrorRecord(
+            recordId = recordId,
+            errorPoint = errorPoint.trim(),
+            description = description.trim(),
+            updatedAt = nowProvider(),
+        )
+    }
+
+    override suspend fun deleteErrorRecord(recordId: String) {
+        val files = dao.getErrorScreenshotsForRecord(recordId)
+            .map(ErrorScreenshotEntity::relativePath)
+        dao.deleteErrorRecord(recordId)
+        snapshotStorage?.deleteAll(files)
+    }
+
+    override suspend fun importErrorScreenshot(
+        recordId: String,
+        sourceUri: Uri,
+    ): String = importErrorAttachment(recordId, sourceUri, SnapshotKind.PHOTO)
+
+    override suspend fun importErrorAttachment(
+        recordId: String,
+        sourceUri: Uri,
+        kind: SnapshotKind,
+    ): String {
+        val storage = snapshotStorage ?: error("学习快照存储不可用")
+        require(dao.getErrorRecord(recordId) != null) { "错误记录卡片不存在" }
+        val saved = if (kind == SnapshotKind.PHOTO) {
+            storage.saveErrorScreenshot(recordId, sourceUri)
+        } else {
+            storage.saveErrorFile(recordId, sourceUri)
+        }
+        val screenshotId = UUID.randomUUID().toString()
+        try {
+            dao.insertErrorScreenshot(
+                ErrorScreenshotEntity(
+                    id = screenshotId,
+                    errorRecordId = recordId,
+                    displayName = saved.displayName,
+                    relativePath = saved.relativePath,
+                    mimeType = saved.mimeType,
+                    createdAtEpochMillis = nowProvider(),
+                ),
+            )
+            return screenshotId
+        } catch (error: Exception) {
+            storage.delete(saved.relativePath)
+            throw error
+        }
+    }
+
+    override suspend fun deleteErrorScreenshot(screenshotId: String) {
+        val screenshot = dao.getErrorScreenshot(screenshotId)
+        dao.deleteErrorScreenshot(screenshotId)
+        screenshot?.let { snapshotStorage?.delete(it.relativePath) }
+    }
+
+    override fun observeWeekSummaryDocuments(
+        weekStartDate: LocalDate,
+    ): Flow<List<WeekSummaryDocument>> =
+        dao.observeWeekSummaryDocuments(weekStartDate.toString()).map { documents ->
+            documents.map { document ->
+                document.toDomain(
+                    localPath = snapshotStorage?.resolvePath(document.relativePath)
+                        ?: document.relativePath,
+                )
+            }
+        }
+
+    override fun observeWeekSummaryDocumentsUploadedBetween(
+        startMillis: Long,
+        endMillis: Long,
+    ): Flow<List<WeekSummaryDocument>> =
+        dao.observeWeekSummaryDocumentsUploadedBetween(startMillis, endMillis).map { documents ->
+            documents.map { document ->
+                document.toDomain(
+                    localPath = snapshotStorage?.resolvePath(document.relativePath)
+                        ?: document.relativePath,
+                )
+            }
+        }
+
+    override fun observeWeekSummaryDocumentsForMonth(
+        month: YearMonth,
+    ): Flow<List<WeekSummaryDocument>> {
+        val zoneId = ZoneId.systemDefault()
+        val startTimestamp = month
+            .atDay(1)
+            .atStartOfDay(zoneId)
+            .toInstant()
+            .toEpochMilli()
+        val endTimestamp = month
+            .plusMonths(1)
+            .atDay(1)
+            .atStartOfDay(zoneId)
+            .toInstant()
+            .toEpochMilli() - 1
+        return dao.observeWeekSummaryDocumentsBetween(
+            startTimestamp = startTimestamp,
+            endTimestamp = endTimestamp,
+        ).map { documents ->
+            documents.map { document ->
+                document.toDomain(
+                    localPath = snapshotStorage?.resolvePath(document.relativePath)
+                        ?: document.relativePath,
+                )
+            }
+        }
+    }
+
+    override suspend fun importWeekSummaryDocument(
+        weekStartDate: LocalDate,
+        sourceUri: Uri,
+    ): String {
+        val storage = snapshotStorage ?: error("周总结存储不可用")
+        val saved = storage.saveWeekSummary(weekStartDate.toString(), sourceUri)
+        val documentId = UUID.randomUUID().toString()
+        try {
+            dao.insertWeekSummaryDocument(
+                WeekSummaryDocumentEntity(
+                    id = documentId,
+                    weekStartDate = weekStartDate.toString(),
+                    displayName = saved.displayName,
+                    relativePath = saved.relativePath,
+                    mimeType = saved.mimeType,
+                    uploadedAtEpochMillis = nowProvider(),
+                ),
+            )
+            return documentId
+        } catch (error: Exception) {
+            storage.delete(saved.relativePath)
+            throw error
+        }
+    }
+
+    override suspend fun deleteWeekSummaryDocument(documentId: String) {
+        val document = dao.getWeekSummaryDocument(documentId)
+        dao.deleteWeekSummaryDocument(documentId)
+        document?.let { snapshotStorage?.delete(it.relativePath) }
     }
 
     private suspend fun cancelRepetitionInternal(
@@ -403,6 +640,10 @@ class RoomStudyTaskRepository(
         require(acceptanceCriteria.isNotBlank()) { "验收标准不能为空" }
     }
 
+    private fun validateErrorRecord(errorPoint: String) {
+        require(errorPoint.isNotBlank()) { "错误点不能为空" }
+    }
+
     private companion object {
         const val SEED_METADATA_KEY = "v2_seed_complete"
     }
@@ -443,4 +684,31 @@ private fun LearningSnapshotEntity.toDomain(localPath: String) = LearningSnapsho
     localPath = localPath,
     mimeType = mimeType,
     createdAtEpochMillis = createdAtEpochMillis,
+)
+
+private fun ErrorRecordEntity.toDomain() = ErrorRecord(
+    id = id,
+    cardId = cardId,
+    errorPoint = errorPoint,
+    description = description,
+    createdAtEpochMillis = createdAtEpochMillis,
+    updatedAtEpochMillis = updatedAtEpochMillis,
+)
+
+private fun ErrorScreenshotEntity.toDomain(localPath: String) = ErrorScreenshot(
+    id = id,
+    errorRecordId = errorRecordId,
+    displayName = displayName,
+    localPath = localPath,
+    mimeType = mimeType,
+    createdAtEpochMillis = createdAtEpochMillis,
+)
+
+private fun WeekSummaryDocumentEntity.toDomain(localPath: String) = WeekSummaryDocument(
+    id = id,
+    weekStartDate = LocalDate.parse(weekStartDate),
+    displayName = displayName,
+    localPath = localPath,
+    mimeType = mimeType,
+    uploadedAtEpochMillis = uploadedAtEpochMillis,
 )

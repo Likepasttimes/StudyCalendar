@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -108,12 +110,15 @@ fun AcceptanceScreen(
     onCompletedChange: (Boolean) -> Unit,
     onMasterySelected: (Int) -> Unit,
     onImportSnapshot: (Uri, SnapshotKind) -> Unit,
+    onDeleteSnapshot: (String, (Boolean) -> Unit) -> Unit,
+    onOpenErrorRecords: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var photoPreview by remember { mutableStateOf<LearningSnapshot?>(null) }
     var audioPreview by remember { mutableStateOf<LearningSnapshot?>(null) }
+    var deleteSnapshotTarget by remember { mutableStateOf<LearningSnapshot?>(null) }
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -287,6 +292,10 @@ fun AcceptanceScreen(
                             }
                         }
                     },
+                    onDeleteSnapshot = { snapshot ->
+                        deleteSnapshotTarget = snapshot
+                    },
+                    onOpenErrorRecords = onOpenErrorRecords,
                 )
             }
             item(key = "completion") {
@@ -388,6 +397,27 @@ fun AcceptanceScreen(
             onDismiss = { audioPreview = null },
         )
     }
+    deleteSnapshotTarget?.let { snapshot ->
+        AlertDialog(
+            onDismissRequest = { if (!isSaving) deleteSnapshotTarget = null },
+            title = { Text("删除学习快照？") },
+            text = { Text("本地文件会一并删除，无法恢复。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteSnapshot(snapshot.id) { success ->
+                            if (success) deleteSnapshotTarget = null
+                        }
+                    },
+                    enabled = !isSaving,
+                ) { Text("确认删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteSnapshotTarget = null }) { Text("取消") }
+            },
+            containerColor = SurfaceWarm,
+        )
+    }
 }
 
 @Composable
@@ -398,6 +428,8 @@ private fun LearningSnapshotCard(
     onChooseAudio: () -> Unit,
     onChooseFile: () -> Unit,
     onOpenSnapshot: (LearningSnapshot) -> Unit,
+    onDeleteSnapshot: (LearningSnapshot) -> Unit,
+    onOpenErrorRecords: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -411,11 +443,14 @@ private fun LearningSnapshotCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box {
+                Box(modifier = Modifier.weight(1f)) {
                     FilledTonalButton(
                         onClick = { menuExpanded = true },
-                        modifier = Modifier.heightIn(min = 48.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
                         enabled = !isSaving,
                         shape = RoundedCornerShape(14.dp),
                     ) {
@@ -448,13 +483,24 @@ private fun LearningSnapshotCard(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "${snapshots.size} 条",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MutedBlue,
-                )
+                OutlinedButton(
+                    onClick = onOpenErrorRecords,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                    enabled = !isSaving,
+                    shape = RoundedCornerShape(14.dp),
+                ) { Text("错误记录") }
             }
+            Text(
+                text = "${snapshots.size} 条学习快照",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 5.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MutedBlue,
+            )
             Spacer(modifier = Modifier.height(10.dp))
             if (snapshots.isEmpty()) {
                 Text(
@@ -521,6 +567,10 @@ private fun LearningSnapshotCard(
                                         color = MutedBlue,
                                     )
                                 }
+                                TextButton(
+                                    onClick = { onDeleteSnapshot(snapshot) },
+                                    enabled = !isSaving,
+                                ) { Text("删除", color = Amber) }
                             }
                         }
                     }
@@ -870,6 +920,8 @@ private fun AcceptancePreview() {
             onCompletedChange = {},
             onMasterySelected = {},
             onImportSnapshot = { _, _ -> },
+            onDeleteSnapshot = { _, _ -> },
+            onOpenErrorRecords = {},
         )
     }
 }
