@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WeekSummaryDocumentEntity::class,
         AppMetadataEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class LearningCalendarDatabase : RoomDatabase() {
@@ -96,6 +96,14 @@ abstract class LearningCalendarDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_week_summary_documents_weekStartDate " +
                         "ON week_summary_documents(weekStartDate)",
+                )
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE study_tasks ADD COLUMN repetitionStartDate TEXT",
                 )
             }
         }

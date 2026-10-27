@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 data class TaskDetailUiState(
     val task: StudyTask?,
     val cards: List<TaskContentCard>,
+    val reviewHistory: List<StudyTask>,
     val isLoading: Boolean,
 )
 
@@ -36,10 +37,12 @@ class TaskDetailViewModel(
     val uiState: StateFlow<TaskDetailUiState> = combine(
         repository.observeTask(taskId),
         repository.observeCards(taskId),
-    ) { task, cards ->
+        repository.observeReviewChain(taskId),
+    ) { task, cards, reviewHistory ->
         TaskDetailUiState(
             task = task,
             cards = cards,
+            reviewHistory = reviewHistory,
             isLoading = false,
         )
     }.stateIn(
@@ -48,6 +51,7 @@ class TaskDetailViewModel(
         initialValue = TaskDetailUiState(
             task = null,
             cards = emptyList(),
+            reviewHistory = emptyList(),
             isLoading = true,
         ),
     )

@@ -18,9 +18,13 @@ interface StudyTaskRepository {
 
     fun observeTasksForDate(date: LocalDate): Flow<List<StudyTask>>
 
+    fun observeCardCountsForDate(date: LocalDate): Flow<Map<String, Int>>
+
     fun observeTasksBetween(startDate: LocalDate, endDate: LocalDate): Flow<List<StudyTask>>
 
     fun observeTask(taskId: String): Flow<StudyTask?>
+
+    fun observeReviewChain(taskId: String): Flow<List<StudyTask>>
 
     fun observeCards(taskId: String): Flow<List<TaskContentCard>>
 
@@ -29,6 +33,8 @@ interface StudyTaskRepository {
     fun observeSnapshots(cardId: String): Flow<List<LearningSnapshot>>
 
     suspend fun seedIfNeeded()
+
+    suspend fun repairSpacedRepetitionSchedules()
 
     suspend fun createTask(
         title: String,

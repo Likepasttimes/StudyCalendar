@@ -26,6 +26,9 @@ import com.learningcalendar.app.ui.errors.ErrorRecordsViewModelFactory
 import com.learningcalendar.app.ui.sync.ComputerSyncScreen
 import com.learningcalendar.app.ui.sync.ComputerSyncViewModel
 import com.learningcalendar.app.ui.sync.ComputerSyncViewModelFactory
+import com.learningcalendar.app.ui.overview.DailyOverviewScreen
+import com.learningcalendar.app.ui.overview.DailyOverviewViewModel
+import com.learningcalendar.app.ui.overview.DailyOverviewViewModelFactory
 import com.learningcalendar.app.ui.weekly.WeekSummaryDetailScreen
 import com.learningcalendar.app.ui.weekly.WeekSummaryViewModel
 import com.learningcalendar.app.ui.weekly.WeekSummaryViewModelFactory
@@ -42,6 +45,7 @@ private const val WEEKLY_ROUTE = "weekly-summary"
 private const val WEEK_DETAIL_ROUTE = "week-detail/{weekStart}"
 private const val ERROR_RECORDS_ROUTE = "errors/{cardId}"
 private const val COMPUTER_SYNC_ROUTE = "computer-sync"
+private const val OVERVIEW_ROUTE = "daily-overview"
 
 @Composable
 fun LearningCalendarApp(
@@ -100,6 +104,11 @@ fun LearningCalendarApp(
                                 launchSingleTop = true
                             }
                         },
+                        onOverviewClick = {
+                            navController.navigate(OVERVIEW_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
                     )
                 },
             )
@@ -121,6 +130,11 @@ fun LearningCalendarApp(
                         onWeeklySummaryClick = {},
                         onComputerSyncClick = {
                             navController.navigate(COMPUTER_SYNC_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOverviewClick = {
+                            navController.navigate(OVERVIEW_ROUTE) {
                                 launchSingleTop = true
                             }
                         },
@@ -153,12 +167,50 @@ fun LearningCalendarApp(
                             }
                         },
                         onComputerSyncClick = {},
+                        onOverviewClick = {
+                            navController.navigate(OVERVIEW_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
                     )
                 },
                 onHostChange = syncViewModel::setHost,
                 onPortChange = syncViewModel::setPort,
                 onPairingCodeChange = syncViewModel::setPairingCode,
                 onSync = syncViewModel::sync,
+            )
+        }
+
+        composable(OVERVIEW_ROUTE) {
+            val overviewViewModel: DailyOverviewViewModel = viewModel(
+                factory = DailyOverviewViewModelFactory(repository),
+            )
+            val state by overviewViewModel.uiState.collectAsStateWithLifecycle()
+            DailyOverviewScreen(
+                state = state,
+                bottomBar = {
+                    MainSectionBar(
+                        selected = MainSection.OVERVIEW,
+                        onCalendarClick = {
+                            navController.popBackStack(CALENDAR_ROUTE, inclusive = false)
+                        },
+                        onWeeklySummaryClick = {
+                            navController.navigate(WEEKLY_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onComputerSyncClick = {
+                            navController.navigate(COMPUTER_SYNC_ROUTE) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOverviewClick = {},
+                    )
+                },
+                onPreviousDay = overviewViewModel::showPreviousDay,
+                onNextDay = overviewViewModel::showNextDay,
+                onToday = overviewViewModel::showToday,
+                onSelectDate = overviewViewModel::selectDate,
             )
         }
 
@@ -251,6 +303,13 @@ fun LearningCalendarApp(
                 isSaving = saving,
                 feedback = detailViewModel.feedback,
                 onBack = { navController.popBackStack() },
+                onOpenTask = { targetTaskId ->
+                    if (targetTaskId != taskId) {
+                        navController.navigate("task/$targetTaskId") {
+                            launchSingleTop = true
+                        }
+                    }
+                },
                 onOpenAcceptance = { cardId ->
                     navController.navigate("acceptance/$cardId")
                 },

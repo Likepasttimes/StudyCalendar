@@ -44,11 +44,11 @@ data class StudyTask(
     val sourceType: TaskSourceType,
     val sourceTaskId: String?,
     val reviewSequence: Int?,
+    val repetitionStartDate: LocalDate? = null,
 ) {
     val canOfferSpacedRepetition: Boolean
         get() = sourceType == TaskSourceType.ORIGINAL &&
-            isCompleted &&
-            (!spacedRepetitionEnabled || section == TaskSection.REVIEW)
+            isCompleted
 }
 
 data class TaskContentCard(

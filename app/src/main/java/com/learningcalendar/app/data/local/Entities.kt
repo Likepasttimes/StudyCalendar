@@ -34,6 +34,7 @@ data class StudyTaskEntity(
     val sourceType: String,
     val sourceTaskId: String?,
     val reviewSequence: Int?,
+    val repetitionStartDate: String?,
 )
 
 @Entity(
@@ -149,4 +150,9 @@ data class AppMetadataEntity(
 data class TaskCountRow(
     val date: String,
     val taskCount: Int,
+)
+
+data class TaskCardCountRow(
+    val taskId: String,
+    val cardCount: Int,
 )

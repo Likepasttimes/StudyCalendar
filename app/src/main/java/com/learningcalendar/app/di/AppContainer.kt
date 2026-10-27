@@ -23,6 +23,7 @@ class AppContainer(context: Context) {
     ).addMigrations(
         LearningCalendarDatabase.MIGRATION_1_2,
         LearningCalendarDatabase.MIGRATION_2_3,
+        LearningCalendarDatabase.MIGRATION_3_4,
     ).build()
 
     private val snapshotStorage = LocalSnapshotStorage(context.applicationContext)
@@ -47,6 +48,7 @@ class AppContainer(context: Context) {
     init {
         applicationScope.launch {
             taskRepository.seedIfNeeded()
+            taskRepository.repairSpacedRepetitionSchedules()
         }
     }
 }

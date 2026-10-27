@@ -17,8 +17,8 @@ android {
         applicationId = "com.learningcalendar.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 9
-        versionName = "2.5.0"
+        versionCode = 13
+        versionName = "2.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

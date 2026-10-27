@@ -13,8 +13,8 @@ $packageOutput = Join-Path $buildRoot 'windows-package'
 $iconDirectory = Join-Path $buildRoot 'windows-icon'
 $iconPath = Join-Path $iconDirectory 'learning-calendar.ico'
 $deliveryDirectory = Join-Path $projectRoot 'Windows安装包'
-$deliveryZip = Join-Path $deliveryDirectory '学习日历-Windows-V1.3.0.zip'
-$deliveryInstaller = Join-Path $deliveryDirectory '学习日历-Windows-V1.3.0-安装程序.exe'
+$deliveryZip = Join-Path $deliveryDirectory '学习日历-Windows-V1.4.1.zip'
+$deliveryInstaller = Join-Path $deliveryDirectory '学习日历-Windows-V1.4.1-安装程序.exe'
 
 if (-not (Test-Path -LiteralPath $deliveryDirectory)) {
     New-Item -ItemType Directory -Path $deliveryDirectory -Force | Out-Null
@@ -133,7 +133,7 @@ $iconStream.Dispose()
 & $jpackage `
     --type app-image `
     --name '学习日历' `
-    --app-version '1.3.0' `
+    --app-version '1.4.1' `
     --vendor '学习日历' `
     --description '学习日历 Windows 版' `
     --input $packageInput `
@@ -176,7 +176,7 @@ if (-not $iscc -or -not (Test-Path -LiteralPath $iscc)) {
 & $iscc `
     "/DAppSourceRoot=$(Join-Path $packageOutput '学习日历')" `
     "/DAppOutputDir=$deliveryDirectory" `
-    '/DAppVersion=1.3.0' `
+    '/DAppVersion=1.4.1' `
     "/DIconPath=$iconPath" `
     (Join-Path $PSScriptRoot 'installer.iss')
 if ($LASTEXITCODE -ne 0) {

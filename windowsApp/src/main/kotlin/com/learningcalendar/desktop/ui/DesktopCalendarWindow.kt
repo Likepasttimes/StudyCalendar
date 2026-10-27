@@ -489,9 +489,22 @@ private class TasksPage(
         content.background = WarmBackground
         content.border = EmptyBorder(22, 24, 24, 24)
 
-        content.add(
-            label(task.title, Font("Microsoft YaHei UI", Font.BOLD, 22), DeepBlue).alignLeft(),
+        val detailHeader = JPanel(BorderLayout(12, 0))
+        detailHeader.isOpaque = false
+        detailHeader.alignmentX = Component.LEFT_ALIGNMENT
+        detailHeader.add(
+            label(task.title, Font("Microsoft YaHei UI", Font.BOLD, 22), DeepBlue),
+            BorderLayout.CENTER,
         )
+        if (reviewChain(snapshot, task).isNotEmpty()) {
+            detailHeader.add(
+                actionButton("历史记录") {
+                    showReviewHistoryDialog(dialog, snapshot, task)
+                },
+                BorderLayout.EAST,
+            )
+        }
+        content.add(detailHeader)
         content.add(Box.createVerticalStrut(8))
         content.add(
             label(
@@ -526,6 +539,119 @@ private class TasksPage(
         closeRow.add(actionButton("关闭") { dialog.dispose() })
         dialog.add(closeRow, BorderLayout.SOUTH)
         dialog.setSize(760, 620)
+        dialog.setLocationRelativeTo(owner)
+        dialog.isVisible = true
+    }
+
+    private fun reviewChain(snapshot: SyncSnapshot, task: SyncTask): List<SyncTask> {
+        val sourceId = when (task.sourceType) {
+            "AUTO_REVIEW" -> task.sourceTaskId
+            "ORIGINAL" -> task.id
+            else -> null
+        } ?: return emptyList()
+        val source = snapshot.tasks.firstOrNull {
+            it.id == sourceId && it.sourceType == "ORIGINAL"
+        } ?: return emptyList()
+        val reviews = snapshot.tasks
+            .filter { it.sourceTaskId == sourceId && it.sourceType == "AUTO_REVIEW" }
+            .sortedBy { it.reviewSequence ?: Int.MAX_VALUE }
+        return buildList {
+            add(source)
+            addAll(reviews)
+        }
+    }
+
+    private fun showReviewHistoryDialog(
+        owner: Dialog?,
+        snapshot: SyncSnapshot,
+        task: SyncTask,
+    ) {
+        val chain = reviewChain(snapshot, task)
+        val source = chain.firstOrNull { it.sourceType == "ORIGINAL" } ?: return
+        val reviews = chain.filter { it.sourceType == "AUTO_REVIEW" }
+        val dialog = JDialog(owner, "复习历史", Dialog.ModalityType.APPLICATION_MODAL)
+        dialog.defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
+        dialog.background = WarmBackground
+
+        val content = JPanel()
+        content.layout = BoxLayout(content, BoxLayout.Y_AXIS)
+        content.background = WarmBackground
+        content.border = EmptyBorder(18, 20, 18, 20)
+        content.add(label("复习历史", Font("Microsoft YaHei UI", Font.BOLD, 21), DeepBlue))
+        content.add(Box.createVerticalStrut(5))
+        content.add(label("每天会保留此前已经学习过的任务记录。", smallFont, MutedBlue))
+        content.add(Box.createVerticalStrut(12))
+
+        val today = LocalDate.now()
+        val reachedReviews = reviews.filter { !it.scheduledDate.isAfter(today) }
+        val availableDays = buildList {
+            add(1)
+            listOf(2, 3, 7).forEach { day ->
+                if (reviews.any {
+                        it.reviewSequence == day && !it.scheduledDate.isAfter(today)
+                    }
+                ) {
+                    add(day)
+                }
+            }
+        }
+        availableDays.forEach { day ->
+            content.add(label("第 $day 天", headingFont, SageDark).alignLeft())
+            content.add(Box.createVerticalStrut(6))
+            val visible = buildList {
+                add(source)
+                if (day > 1) {
+                    addAll(
+                        reachedReviews.filter {
+                            (it.reviewSequence ?: Int.MAX_VALUE) <= day
+                        },
+                    )
+                }
+            }
+            visible.forEach { historyTask ->
+                val row = RoundedPanel(SurfaceWarm, CardOutline, 14)
+                row.layout = BoxLayout(row, BoxLayout.Y_AXIS)
+                row.border = EmptyBorder(9, 12, 9, 12)
+                row.alignmentX = Component.LEFT_ALIGNMENT
+                row.add(
+                    label(
+                        historyTask.title,
+                        Font("Microsoft YaHei UI", Font.BOLD, 14),
+                        DeepBlue,
+                    ).alignLeft(),
+                )
+                row.add(
+                    label(
+                        "${historyTask.scheduledDate.monthValue} 月 " +
+                            "${historyTask.scheduledDate.dayOfMonth} 日 · " +
+                            if (historyTask.sourceType == "ORIGINAL") {
+                                "原始任务"
+                            } else {
+                                "第 ${historyTask.reviewSequence} 天复习任务"
+                            },
+                        smallFont,
+                        MutedBlue,
+                    ).alignLeft(),
+                )
+                installClick(row) {
+                    dialog.dispose()
+                    SwingUtilities.invokeLater {
+                        showTaskDetailDialog(snapshot, historyTask)
+                    }
+                }
+                row.maximumSize = Dimension(Int.MAX_VALUE, row.preferredSize.height)
+                row.minimumSize = Dimension(0, row.preferredSize.height)
+                content.add(row)
+                content.add(Box.createVerticalStrut(7))
+            }
+            content.add(Box.createVerticalStrut(8))
+        }
+        dialog.add(scrollable(content), BorderLayout.CENTER)
+        val close = JPanel(FlowLayout(FlowLayout.RIGHT))
+        close.background = WarmBackground
+        close.add(actionButton("关闭") { dialog.dispose() })
+        dialog.add(close, BorderLayout.SOUTH)
+        dialog.setSize(720, 620)
         dialog.setLocationRelativeTo(owner)
         dialog.isVisible = true
     }
@@ -1470,6 +1596,18 @@ private fun label(text: String, font: Font, color: Color): JLabel = JLabel(text)
 private fun <T : Component> T.alignLeft(): T {
     (this as? JComponent)?.alignmentX = Component.LEFT_ALIGNMENT
     return this
+}
+
+private fun installClick(component: Component, action: () -> Unit) {
+    component.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+    component.addMouseListener(object : MouseAdapter() {
+        override fun mouseClicked(event: MouseEvent) {
+            action()
+        }
+    })
+    if (component is java.awt.Container) {
+        component.components.forEach { child -> installClick(child, action) }
+    }
 }
 
 private fun multilineLabel(text: String): JTextArea = JTextArea(text).apply {

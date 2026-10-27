@@ -95,8 +95,20 @@ class RoomStudyTaskRepositoryTest {
         )
         assertTrue(reviews.all { it.sourceType == TaskSourceType.AUTO_REVIEW.name })
         assertTrue(reviews.all { it.section == TaskSection.REVIEW.name })
-        assertEquals(TaskSection.REVIEW.name, source.section)
+        assertEquals(TaskSection.NEW.name, source.section)
         assertTrue(source.spacedRepetitionEnabled)
+        assertEquals(today.toString(), source.repetitionStartDate)
+        val history = repository.observeReviewChain(sourceId).first()
+        assertEquals(4, history.size)
+        assertEquals(sourceId, history.first().id)
+        assertEquals(
+            listOf(sourceId, reviews[0].id, reviews[1].id, reviews[2].id).toSet(),
+            history.map { it.id }.toSet(),
+        )
+        assertEquals(
+            history.map { it.id },
+            repository.observeReviewChain(reviews.first().id).first().map { it.id },
+        )
         reviews.forEach { review ->
             val cards = repository.observeCards(review.id).first()
             assertEquals(1, cards.size)
@@ -118,6 +130,126 @@ class RoomStudyTaskRepositoryTest {
     }
 
     @Test
+    fun reviewCycleStartsOnCompletionDateAndKeepsOriginalOutOfReviewSection() = runTest {
+        var currentDate = LocalDate.of(2026, 10, 20)
+        val repo = RoomStudyTaskRepository(
+            database = database,
+            snapshotStorage = snapshotStorage,
+            todayProvider = { currentDate },
+            nowProvider = { clock++ },
+        )
+        val sourceId = repo.createTask(
+            title = "今天完成旧任务",
+            scheduledDate = currentDate,
+            startTime = null,
+            section = TaskSection.NEW,
+        )
+        currentDate = LocalDate.of(2026, 10, 27)
+
+        repo.setTaskCompleted(sourceId, true)
+        repo.enableSpacedRepetition(sourceId)
+
+        val tasks = database.studyTaskDao().observeAllTasks().first()
+        val source = tasks.single { it.id == sourceId }
+        val reviews = tasks.filter { it.sourceTaskId == sourceId }
+        assertEquals(TaskSection.NEW.name, source.section)
+        assertEquals("2026-10-27", source.repetitionStartDate)
+        assertEquals(
+            listOf(
+                LocalDate.of(2026, 10, 28),
+                LocalDate.of(2026, 10, 29),
+                LocalDate.of(2026, 11, 2),
+            ),
+            reviews.map { LocalDate.parse(it.scheduledDate) }.sorted(),
+        )
+        assertEquals(listOf(2, 3, 7), reviews.mapNotNull { it.reviewSequence }.sorted())
+    }
+
+    @Test
+    fun repairRestoresMissingSecondDayAndRebasesLegacyChain() = runTest {
+        clock = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() + 100_000
+        val sourceId = completedOriginal()
+        repository.enableSpacedRepetition(sourceId)
+        val secondDay = database.studyTaskDao().findAutoReview(sourceId, 2)!!
+        database.studyTaskDao().deleteTask(secondDay.id)
+        database.openHelper.writableDatabase.execSQL(
+            """
+            UPDATE study_tasks
+            SET repetitionStartDate = NULL,
+                section = 'REVIEW',
+                createdDate = '2026-10-20'
+            WHERE id = ?
+            """.trimIndent(),
+            arrayOf(sourceId),
+        )
+
+        repository.repairSpacedRepetitionSchedules()
+
+        val tasks = database.studyTaskDao().observeAllTasks().first()
+        val source = tasks.single { it.id == sourceId }
+        val reviews = tasks.filter { it.sourceTaskId == sourceId }
+        assertEquals(TaskSection.NEW.name, source.section)
+        assertEquals(today.toString(), source.repetitionStartDate)
+        assertEquals(listOf(2, 3, 7), reviews.mapNotNull { it.reviewSequence }.sorted())
+        assertEquals(
+            listOf(today.plusDays(1), today.plusDays(2), today.plusDays(6)),
+            reviews.map { LocalDate.parse(it.scheduledDate) }.sorted(),
+        )
+    }
+
+    @Test
+    fun repairRestoresLegacyDatesShiftedByEarlierUpgrade() = runTest {
+        val sourceId = completedOriginal()
+        repository.enableSpacedRepetition(sourceId)
+        val legacyStart = today.minusDays(2)
+        val legacyCreatedAt = legacyStart
+            .atStartOfDay(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val reviews = database.studyTaskDao().getAutoReviewsForSource(sourceId)
+        reviews.forEach { review ->
+            database.openHelper.writableDatabase.execSQL(
+                """
+                UPDATE study_tasks
+                SET createdAtEpochMillis = ?,
+                    scheduledDate = ?
+                WHERE id = ?
+                """.trimIndent(),
+                arrayOf<Any>(
+                    legacyCreatedAt + review.reviewSequence!!,
+                    today.plusDays(99).toString(),
+                    review.id,
+                ),
+            )
+        }
+        database.studyTaskDao().updateRepetitionState(
+            taskId = sourceId,
+            enabled = true,
+            section = TaskSection.NEW.name,
+            startDate = today.toString(),
+        )
+
+        repository.repairSpacedRepetitionSchedules()
+
+        val repairedSource = database.studyTaskDao().getTask(sourceId)!!
+        val repairedReviews = database.studyTaskDao().getAutoReviewsForSource(sourceId)
+        assertEquals(legacyStart.toString(), repairedSource.repetitionStartDate)
+        assertEquals(
+            listOf(
+                legacyStart.plusDays(1),
+                legacyStart.plusDays(2),
+                legacyStart.plusDays(6),
+            ),
+            repairedReviews.map { LocalDate.parse(it.scheduledDate) }.sorted(),
+        )
+        assertEquals(
+            today,
+            repairedReviews.single { it.reviewSequence == 3 }
+                .let { LocalDate.parse(it.scheduledDate) },
+        )
+    }
+
+    @Test
     fun cancelRemovesOnlyAutoReviewsAndReturnsOriginalToNewSection() = runTest {
         val sourceId = completedOriginal()
         repository.enableSpacedRepetition(sourceId)
@@ -129,6 +261,7 @@ class RoomStudyTaskRepositoryTest {
         val source = tasks.single { it.id == sourceId }
         assertEquals(TaskSection.NEW.name, source.section)
         assertFalse(source.spacedRepetitionEnabled)
+        assertNull(source.repetitionStartDate)
         assertTrue(source.isCompleted)
     }
 
@@ -235,6 +368,29 @@ class RoomStudyTaskRepositoryTest {
         val ordered = repository.observeTasksForDate(today).first()
 
         assertEquals(listOf(earlier, later, noTime), ordered.map { it.id })
+    }
+
+    @Test
+    fun dailyOverviewReturnsContentCardCountByTask() = runTest {
+        val withCards = repository.createTask(
+            "有内容卡片",
+            today,
+            LocalTime.of(9, 0),
+            TaskSection.NEW,
+        )
+        repository.createTask(
+            "没有内容卡片",
+            today,
+            LocalTime.of(10, 0),
+            TaskSection.NEW,
+        )
+        repository.addCard(withCards, "目标一", "动作一", "标准一")
+        repository.addCard(withCards, "目标二", "动作二", "标准二")
+
+        val counts = repository.observeCardCountsForDate(today).first()
+
+        assertEquals(2, counts[withCards])
+        assertEquals(1, counts.size)
     }
 
     @Test

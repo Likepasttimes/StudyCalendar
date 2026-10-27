@@ -14,6 +14,9 @@ data class SyncTask(
     val isCompleted: Boolean,
     val spacedRepetitionEnabled: Boolean,
     val sourceType: String,
+    val sourceTaskId: String?,
+    val reviewSequence: Int?,
+    val repetitionStartDate: LocalDate?,
 )
 
 data class SyncContentCard(
@@ -111,6 +114,10 @@ object SyncSnapshotParser {
                     isCompleted = item.optBoolean("isCompleted"),
                     spacedRepetitionEnabled = item.optBoolean("spacedRepetitionEnabled"),
                     sourceType = item.optString("sourceType", "ORIGINAL"),
+                    sourceTaskId = item.nullableString("sourceTaskId"),
+                    reviewSequence = item.nullableInt("reviewSequence"),
+                    repetitionStartDate = item.nullableString("repetitionStartDate")
+                        ?.let(LocalDate::parse),
                 )
             },
             contentCards = tables.array("task_content_cards").mapObjects { item ->

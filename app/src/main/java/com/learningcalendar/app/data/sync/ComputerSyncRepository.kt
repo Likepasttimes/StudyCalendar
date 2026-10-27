@@ -184,7 +184,7 @@ class ComputerSyncRepository(
         val manifest = JSONObject().apply {
             put("formatVersion", SYNC_FORMAT_VERSION)
             put("exportedAtEpochMillis", System.currentTimeMillis())
-            put("appVersion", "2.5.0")
+            put("appVersion", "2.7.0")
             put(
                 "tables",
                 JSONObject().apply {
@@ -287,6 +287,7 @@ private fun StudyTaskEntity.toSyncJson() = JSONObject().apply {
     put("sourceType", sourceType)
     put("sourceTaskId", sourceTaskId ?: JSONObject.NULL)
     put("reviewSequence", reviewSequence ?: JSONObject.NULL)
+    put("repetitionStartDate", repetitionStartDate ?: JSONObject.NULL)
 }
 
 private fun TaskContentCardEntity.toSyncJson() = JSONObject().apply {

@@ -33,6 +33,17 @@ interface StudyTaskDao {
 
     @Query(
         """
+        SELECT task_content_cards.taskId AS taskId, COUNT(*) AS cardCount
+        FROM task_content_cards
+        INNER JOIN study_tasks ON study_tasks.id = task_content_cards.taskId
+        WHERE study_tasks.scheduledDate = :date
+        GROUP BY task_content_cards.taskId
+        """,
+    )
+    fun observeCardCountsForDate(date: String): Flow<List<TaskCardCountRow>>
+
+    @Query(
+        """
         SELECT * FROM study_tasks
         WHERE scheduledDate BETWEEN :startDate AND :endDate
         ORDER BY scheduledDate ASC,
@@ -58,6 +69,38 @@ interface StudyTaskDao {
 
     @Query("SELECT * FROM study_tasks ORDER BY scheduledDate, createdAtEpochMillis, id")
     suspend fun getAllTasksForSync(): List<StudyTaskEntity>
+
+    @Query(
+        """
+        SELECT * FROM study_tasks
+        WHERE id = :sourceTaskId
+           OR (sourceTaskId = :sourceTaskId AND sourceType = 'AUTO_REVIEW')
+        ORDER BY
+            CASE WHEN id = :sourceTaskId THEN 0 ELSE 1 END,
+            reviewSequence ASC,
+            scheduledDate ASC
+        """,
+    )
+    fun observeReviewChain(sourceTaskId: String): Flow<List<StudyTaskEntity>>
+
+    @Query(
+        """
+        SELECT * FROM study_tasks
+        WHERE spacedRepetitionEnabled = 1
+          AND sourceType = 'ORIGINAL'
+        """,
+    )
+    suspend fun getEnabledOriginalTasks(): List<StudyTaskEntity>
+
+    @Query(
+        """
+        SELECT * FROM study_tasks
+        WHERE sourceTaskId = :sourceTaskId
+          AND sourceType = 'AUTO_REVIEW'
+        ORDER BY reviewSequence ASC
+        """,
+    )
+    suspend fun getAutoReviewsForSource(sourceTaskId: String): List<StudyTaskEntity>
 
     @Query("SELECT COUNT(*) FROM study_tasks")
     suspend fun taskCount(): Int
@@ -90,7 +133,9 @@ interface StudyTaskDao {
     @Query(
         """
         UPDATE study_tasks
-        SET spacedRepetitionEnabled = :enabled, section = :section
+        SET spacedRepetitionEnabled = :enabled,
+            section = :section,
+            repetitionStartDate = :startDate
         WHERE id = :taskId
         """,
     )
@@ -98,6 +143,19 @@ interface StudyTaskDao {
         taskId: String,
         enabled: Boolean,
         section: String,
+        startDate: String?,
+    )
+
+    @Query(
+        """
+        UPDATE study_tasks
+        SET scheduledDate = :scheduledDate
+        WHERE id = :taskId AND sourceType = 'AUTO_REVIEW'
+        """,
+    )
+    suspend fun updateAutoReviewDate(
+        taskId: String,
+        scheduledDate: String,
     )
 
     @Query("DELETE FROM study_tasks WHERE id = :taskId")

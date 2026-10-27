@@ -25,9 +25,13 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 class RoomStudyTaskRepository(
     private val database: LearningCalendarDatabase,
@@ -48,6 +52,11 @@ class RoomStudyTaskRepository(
     override fun observeTasksForDate(date: LocalDate): Flow<List<StudyTask>> =
         dao.observeTasksForDate(date.toString()).map { tasks -> tasks.map(StudyTaskEntity::toDomain) }
 
+    override fun observeCardCountsForDate(date: LocalDate): Flow<Map<String, Int>> =
+        dao.observeCardCountsForDate(date.toString()).map { rows ->
+            rows.associate { it.taskId to it.cardCount }
+        }
+
     override fun observeTasksBetween(
         startDate: LocalDate,
         endDate: LocalDate,
@@ -58,6 +67,23 @@ class RoomStudyTaskRepository(
 
     override fun observeTask(taskId: String): Flow<StudyTask?> =
         dao.observeTask(taskId).map { it?.toDomain() }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeReviewChain(taskId: String): Flow<List<StudyTask>> =
+        dao.observeTask(taskId).flatMapLatest { task ->
+            val sourceTaskId = when (task?.sourceType) {
+                TaskSourceType.AUTO_REVIEW.name -> task.sourceTaskId
+                TaskSourceType.ORIGINAL.name -> task.id
+                else -> null
+            }
+            if (sourceTaskId == null) {
+                flowOf(emptyList())
+            } else {
+                dao.observeReviewChain(sourceTaskId).map { tasks ->
+                    tasks.map(StudyTaskEntity::toDomain)
+                }
+            }
+        }
 
     override fun observeCards(taskId: String): Flow<List<TaskContentCard>> =
         dao.observeCards(taskId).map { cards ->
@@ -87,6 +113,38 @@ class RoomStudyTaskRepository(
                 seedTasks(todayProvider())
             }
             dao.putMetadata(AppMetadataEntity(SEED_METADATA_KEY, "done"))
+        }
+    }
+
+    override suspend fun repairSpacedRepetitionSchedules() {
+        database.withTransaction {
+            dao.getEnabledOriginalTasks()
+                .forEach { source ->
+                    val reviews = dao.getAutoReviewsForSource(source.id)
+                    val inferredStartDate = reviews
+                        .minOfOrNull { it.createdAtEpochMillis }
+                        ?.let {
+                            Instant.ofEpochMilli(it)
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalDate()
+                        }
+                    val storedStartDate = source.repetitionStartDate
+                        ?.let(LocalDate::parse)
+                    val startDate = when {
+                        storedStartDate == null -> inferredStartDate
+                            ?: source.scheduledDate.let(LocalDate::parse)
+                        inferredStartDate != null && inferredStartDate < storedStartDate ->
+                            inferredStartDate
+                        else -> storedStartDate
+                    }
+                    ensureReviewChain(source, startDate)
+                    dao.updateRepetitionState(
+                        taskId = source.id,
+                        enabled = true,
+                        section = TaskSection.NEW.name,
+                        startDate = startDate.toString(),
+                    )
+                }
         }
     }
 
@@ -120,6 +178,7 @@ class RoomStudyTaskRepository(
                     },
                     sourceTaskId = null,
                     reviewSequence = null,
+                    repetitionStartDate = null,
                 ),
             )
             taskId
@@ -173,6 +232,7 @@ class RoomStudyTaskRepository(
                     taskId = task.id,
                     enabled = false,
                     section = TaskSection.NEW.name,
+                    startDate = null,
                 )
             }
             dao.updateTaskCompletion(taskId, completed)
@@ -187,44 +247,62 @@ class RoomStudyTaskRepository(
             }
             require(source.isCompleted) { "请先完成卡片" }
 
-            val sourceCards = dao.getCards(sourceTaskId)
-            val now = nowProvider()
-            ReviewSchedule.milestones(LocalDate.parse(source.createdDate)).forEach { milestone ->
-                if (dao.findAutoReview(sourceTaskId, milestone.sequence) == null) {
-                    val reviewTaskId = UUID.randomUUID().toString()
-                    dao.insertTask(
-                        StudyTaskEntity(
-                            id = reviewTaskId,
-                            title = source.title,
-                            scheduledDate = milestone.date.toString(),
-                            startTime = source.startTime,
-                            section = TaskSection.REVIEW.name,
-                            isCompleted = false,
-                            spacedRepetitionEnabled = false,
-                            createdDate = todayProvider().toString(),
-                            createdAtEpochMillis = now + milestone.sequence,
-                            sourceType = TaskSourceType.AUTO_REVIEW.name,
-                            sourceTaskId = sourceTaskId,
-                            reviewSequence = milestone.sequence,
-                        ),
-                    )
-                    sourceCards.forEachIndexed { index, card ->
-                        dao.insertCard(
-                            card.copy(
-                                id = UUID.randomUUID().toString(),
-                                taskId = reviewTaskId,
-                                createdAtEpochMillis = now + milestone.sequence * 100L + index,
-                            ),
-                        )
-                    }
-                }
-            }
+            val startDate = source.repetitionStartDate
+                ?.let(LocalDate::parse)
+                ?: todayProvider()
+            ensureReviewChain(source, startDate)
 
             dao.updateRepetitionState(
                 taskId = sourceTaskId,
                 enabled = true,
-                section = TaskSection.REVIEW.name,
+                section = TaskSection.NEW.name,
+                startDate = startDate.toString(),
             )
+        }
+    }
+
+    private suspend fun ensureReviewChain(
+        source: StudyTaskEntity,
+        startDate: LocalDate,
+    ) {
+        val sourceCards = dao.getCards(source.id)
+        val now = nowProvider()
+        ReviewSchedule.milestones(startDate).forEach { milestone ->
+            val existing = dao.findAutoReview(source.id, milestone.sequence)
+            if (existing == null) {
+                val reviewTaskId = UUID.randomUUID().toString()
+                dao.insertTask(
+                    StudyTaskEntity(
+                        id = reviewTaskId,
+                        title = source.title,
+                        scheduledDate = milestone.date.toString(),
+                        startTime = source.startTime,
+                        section = TaskSection.REVIEW.name,
+                        isCompleted = false,
+                        spacedRepetitionEnabled = false,
+                        createdDate = todayProvider().toString(),
+                        createdAtEpochMillis = now + milestone.sequence,
+                        sourceType = TaskSourceType.AUTO_REVIEW.name,
+                        sourceTaskId = source.id,
+                        reviewSequence = milestone.sequence,
+                        repetitionStartDate = null,
+                    ),
+                )
+                sourceCards.forEachIndexed { index, card ->
+                    dao.insertCard(
+                        card.copy(
+                            id = UUID.randomUUID().toString(),
+                            taskId = reviewTaskId,
+                            createdAtEpochMillis = now + milestone.sequence * 100L + index,
+                        ),
+                    )
+                }
+            } else if (existing.scheduledDate != milestone.date.toString()) {
+                dao.updateAutoReviewDate(
+                    taskId = existing.id,
+                    scheduledDate = milestone.date.toString(),
+                )
+            }
         }
     }
 
@@ -566,6 +644,7 @@ class RoomStudyTaskRepository(
             taskId = source.id,
             enabled = false,
             section = targetSection.name,
+            startDate = null,
         )
     }
 
@@ -620,6 +699,7 @@ class RoomStudyTaskRepository(
         sourceType = TaskSourceType.ORIGINAL.name,
         sourceTaskId = null,
         reviewSequence = null,
+        repetitionStartDate = null,
     )
 
     private fun nearbyDate(today: LocalDate, dayOffset: Int): LocalDate {
@@ -662,6 +742,7 @@ private fun StudyTaskEntity.toDomain() = StudyTask(
     sourceType = TaskSourceType.valueOf(sourceType),
     sourceTaskId = sourceTaskId,
     reviewSequence = reviewSequence,
+    repetitionStartDate = repetitionStartDate?.let(LocalDate::parse),
 )
 
 private fun TaskContentCardEntity.toDomain() = TaskContentCard(

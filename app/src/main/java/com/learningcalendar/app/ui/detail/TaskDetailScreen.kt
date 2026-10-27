@@ -63,6 +63,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.learningcalendar.app.domain.MasteryLevel
+import com.learningcalendar.app.domain.ReviewHistoryLogic
 import com.learningcalendar.app.domain.StudyTask
 import com.learningcalendar.app.domain.TaskContentCard
 import com.learningcalendar.app.domain.TaskSection
@@ -94,6 +95,7 @@ fun TaskDetailScreen(
     isSaving: Boolean,
     feedback: kotlinx.coroutines.flow.Flow<com.learningcalendar.app.ui.UiFeedback>,
     onBack: () -> Unit,
+    onOpenTask: (String) -> Unit,
     onOpenAcceptance: (String) -> Unit,
     onUpdateTask: (String, LocalTime?, (Boolean) -> Unit) -> Unit,
     onTaskCompleted: (StudyTask, Boolean, (Boolean) -> Unit) -> Unit,
@@ -109,6 +111,7 @@ fun TaskDetailScreen(
     var showDeleteTask by remember { mutableStateOf(false) }
     var showCancelReview by remember { mutableStateOf(false) }
     var showUncomplete by remember { mutableStateOf(false) }
+    var showReviewHistory by remember { mutableStateOf(false) }
     var cardEditorTarget by remember { mutableStateOf<CardEditorTarget?>(null) }
     var cardDeleteTarget by remember { mutableStateOf<TaskContentCard?>(null) }
     val expandedCards = remember { mutableStateMapOf<String, Boolean>() }
@@ -187,11 +190,26 @@ fun TaskDetailScreen(
                         contentPadding = PaddingValues(horizontal = 0.dp, vertical = 10.dp),
                     ) { Text("← 返回当天卡片") }
                     Spacer(modifier = Modifier.height(5.dp))
-                    Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = DeepBlue,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = task.title,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = DeepBlue,
+                        )
+                        if (state.reviewHistory.isNotEmpty()) {
+                            OutlinedButton(
+                                onClick = { showReviewHistory = true },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                            ) {
+                                Text("历史记录")
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(5.dp))
                     Text(
                         text = "${task.scheduledDate.year} 年 ${task.scheduledDate.monthValue} 月 " +
@@ -529,6 +547,17 @@ fun TaskDetailScreen(
             containerColor = SurfaceWarm,
         )
     }
+
+    if (showReviewHistory) {
+        ReviewHistoryDialog(
+            history = state.reviewHistory,
+            onDismiss = { showReviewHistory = false },
+            onOpenTask = { taskId ->
+                showReviewHistory = false
+                onOpenTask(taskId)
+            },
+        )
+    }
 }
 
 @Composable
@@ -847,6 +876,119 @@ private fun CardEditorDialog(
     }
 }
 
+@Composable
+private fun ReviewHistoryDialog(
+    history: List<StudyTask>,
+    onDismiss: () -> Unit,
+    onOpenTask: (String) -> Unit,
+) {
+    if (history.none { it.sourceType == TaskSourceType.ORIGINAL }) return
+    val groups = ReviewHistoryLogic.availableGroups(
+        tasks = history,
+        today = LocalDate.now(),
+    )
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 660.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = SurfaceWarm,
+        ) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "复习历史",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = DeepBlue,
+                )
+                Text(
+                    text = "每天会保留此前已经学习过的任务记录。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MutedBlue,
+                )
+                groups.forEach { group ->
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text(
+                            text = "第 ${group.day} 天",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = SageDark,
+                        )
+                        group.tasks.forEach { task ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 52.dp)
+                                    .clickable { onOpenTask(task.id) }
+                                    .clearAndSetSemantics {
+                                        contentDescription = "${task.title}，" +
+                                            "${task.scheduledDate.year} 年 " +
+                                            "${task.scheduledDate.monthValue} 月 " +
+                                            "${task.scheduledDate.dayOfMonth} 日，" +
+                                            when (task.sourceType) {
+                                                TaskSourceType.ORIGINAL -> "原始任务"
+                                                TaskSourceType.AUTO_REVIEW ->
+                                                    "第 ${task.reviewSequence} 天复习任务"
+                                                TaskSourceType.MANUAL_REVIEW -> "手动复习任务"
+                                            }
+                                        role = Role.Button
+                                        onClick(label = "打开任务") {
+                                            onOpenTask(task.id)
+                                            true
+                                        }
+                                    },
+                                shape = RoundedCornerShape(16.dp),
+                                color = WarmBackground,
+                                border = BorderStroke(1.dp, CardOutline),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(
+                                        horizontal = 13.dp,
+                                        vertical = 9.dp,
+                                    ),
+                                ) {
+                                    Text(
+                                        text = task.title,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = DeepBlue,
+                                    )
+                                    Text(
+                                        text = "${task.scheduledDate.monthValue} 月 " +
+                                            "${task.scheduledDate.dayOfMonth} 日 · " +
+                                            when (task.sourceType) {
+                                                TaskSourceType.ORIGINAL -> "原始任务"
+                                                TaskSourceType.AUTO_REVIEW ->
+                                                    "第 ${task.reviewSequence} 天复习"
+                                                TaskSourceType.MANUAL_REVIEW -> "手动复习"
+                                            },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MutedBlue,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text("关闭")
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Preview(name = "卡片详情", widthDp = 360, heightDp = 900, showBackground = true)
 @Composable
 private fun TaskDetailPreview() {
@@ -878,10 +1020,16 @@ private fun TaskDetailPreview() {
     )
     LearningCalendarTheme {
         TaskDetailScreen(
-            state = TaskDetailUiState(task, listOf(card), false),
+            state = TaskDetailUiState(
+                task = task,
+                cards = listOf(card),
+                reviewHistory = listOf(task),
+                isLoading = false,
+            ),
             isSaving = false,
             feedback = kotlinx.coroutines.flow.emptyFlow(),
             onBack = {},
+            onOpenTask = {},
             onOpenAcceptance = {},
             onUpdateTask = { _, _, _ -> },
             onTaskCompleted = { _, _, _ -> },
